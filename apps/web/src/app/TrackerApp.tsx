@@ -31,6 +31,7 @@ import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKe
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { DashboardHeader } from "../components/DashboardHeader";
 import { EvidenceExportPanel } from "../components/EvidenceExportPanel";
+import { ExportBackupDialog } from "../components/ExportBackupDialog";
 import { InsightsSidebar } from "../components/InsightsSidebar";
 import { InterruptedCaptureNotice } from "../components/InterruptedCaptureNotice";
 import { LowerDashboard } from "../components/LowerDashboard";
@@ -86,6 +87,7 @@ import {
   removeCaptureCheckpoint,
   writeCaptureCheckpoint,
 } from "../storage/captureCheckpoint";
+import { encryptBackup } from "../storage/encryptedBackup";
 import { createSessionMutationQueue } from "../storage/sessionMutations";
 export { formatTime } from "../utils/formatting";
 
@@ -161,6 +163,7 @@ export function App() {
   const [report, setReport] = useState<AnalysisReport>(() => emptyReport());
   // Identity of the analysis run that produced `report`; null when nothing has analyzed it.
   const [reportRun, setReportRun] = useState<AnalysisRunIdentity | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [sessions, setSessions] = useState<SavedSession[]>(() => loadSessions());
   const [speakers, setSpeakers] = useState<SpeakerProfile[]>(() => loadSpeakerProfiles());
   // Captures that were not saved when a window last closed (or that the workspace set aside), until
@@ -1963,8 +1966,15 @@ export function App() {
     setSessions(restored);
   }
 
-  function exportJson() {
-    downloadJsonFile("stutter-tracker-export.json", { sessions, speakers, corpus: corpusAnalysis });
+  async function exportJson(passphrase: string | null) {
+    const backup = { sessions, speakers, corpus: corpusAnalysis };
+    if (!passphrase) {
+      downloadJsonFile("stutter-tracker-export.json", backup);
+      return;
+    }
+    // Only the envelope becomes a Blob; the plaintext stays an in-memory string.
+    const envelope = await encryptBackup(JSON.stringify(backup), passphrase);
+    downloadFile("stutter-tracker-export.encrypted.json", envelope);
   }
 
   async function exportCorpusJson() {
@@ -1977,7 +1987,10 @@ export function App() {
   }
 
   function downloadJsonFile(filename: string, value: unknown) {
-    const payload = JSON.stringify(value, null, 2);
+    downloadFile(filename, JSON.stringify(value, null, 2));
+  }
+
+  function downloadFile(filename: string, payload: string) {
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -2284,7 +2297,7 @@ export function App() {
           onSave={saveSession}
           saveDisabled={captureInProgress || isAnalyzing}
           storageWarning={checkpointError ?? claimError}
-          onExport={exportJson}
+          onExport={() => setExportDialogOpen(true)}
           savedSessionCount={sessions.length}
           onRestoreSessions={restoreSessions}
         />
@@ -2346,6 +2359,9 @@ export function App() {
         reanalyzingSessionIds={reanalyzingSessionIds}
       />
       <EvidenceExportPanel sessions={sessions} />
+      {exportDialogOpen && (
+        <ExportBackupDialog onClose={() => setExportDialogOpen(false)} onDownload={exportJson} />
+      )}
     </main>
   );
 }
