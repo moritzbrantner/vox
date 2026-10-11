@@ -278,7 +278,11 @@ export function App() {
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
+  // Bumped by every change of what the workspace shows or captures, so queued work can tell whether
+  // the user touched it meanwhile, even when it ends up back where it was.
+  const workspaceGenerationRef = useRef(0);
   const setViewedSession = (session: SavedSession | null) => {
+    workspaceGenerationRef.current += 1;
     viewedSessionRef.current = session;
     setViewedSessionState(session);
   };
@@ -792,6 +796,7 @@ export function App() {
     }
     // Recovery must not replace the workspace while this start is still waiting.
     startPendingRef.current = true;
+    workspaceGenerationRef.current += 1;
     try {
       if (selectedEngine.id !== "browser") {
         const ready = await ensureSelectedModelReady(transcription);
@@ -1577,6 +1582,7 @@ export function App() {
   // Makes `id` the workspace capture, owned by this window until it is saved or set aside.
   function takeWorkspaceCapture(id: string, release: (() => void) | null) {
     releaseWorkspaceCapture();
+    workspaceGenerationRef.current += 1;
     captureIdRef.current = id;
     if (release) {
       releaseCaptureRef.current = release;
@@ -1778,11 +1784,7 @@ export function App() {
     release: () => void,
   ) {
     // The workspace as recovery left it; opening a session or starting a capture changes it.
-    const workspaceAtStart = {
-      loaded: loadedSessionRef.current,
-      viewed: viewedSessionRef.current,
-      active: activeSessionIdRef.current,
-    };
+    const workspaceAtStart = workspaceGenerationRef.current;
     const session = createSessionRecord({
       id: checkpoint.id,
       recordings: checkpoint.recording ? [checkpoint.recording] : [],
@@ -1820,9 +1822,7 @@ export function App() {
         !captureIdRef.current &&
         !startPendingRef.current &&
         !isRecordingRef.current &&
-        loadedSessionRef.current === workspaceAtStart.loaded &&
-        viewedSessionRef.current === workspaceAtStart.viewed &&
-        activeSessionIdRef.current === workspaceAtStart.active
+        workspaceGenerationRef.current === workspaceAtStart
       ) {
         setInterimText("");
         setSpeakerMatch(null);
