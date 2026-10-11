@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun run test:unit && bun run test:integration && bun run test:e2e",
     "test:unit": "vitest run src/App.unit.test.ts src/audio/*.test.ts src/recording/*.test.ts src/storage/*.test.ts",
-    "test:integration": "vitest run src/App.integration.test.tsx src/SessionPersistence.integration.test.tsx src/AuditoryFeedbackLab.integration.test.tsx src/OfflineModelPreparation.integration.test.tsx src/SessionDeletion.integration.test.tsx src/SessionRestore.integration.test.tsx",
+    "test:integration": "vitest run src/App.integration.test.tsx src/SessionPersistence.integration.test.tsx src/AuditoryFeedbackLab.integration.test.tsx src/OfflineModelPreparation.integration.test.tsx src/SessionDeletion.integration.test.tsx src/SessionRestore.integration.test.tsx src/SessionMutationLock.integration.test.tsx",
     "test:e2e": "playwright test",
     "bench:pitch-worklet": "bun scripts/bench-pitch-worklet.ts"
   },

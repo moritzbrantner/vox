@@ -86,6 +86,7 @@ import {
   removeCaptureCheckpoint,
   writeCaptureCheckpoint,
 } from "../storage/captureCheckpoint";
+import { createSessionMutationQueue } from "../storage/sessionMutations";
 export { formatTime } from "../utils/formatting";
 
 const STORE_KEY = "stutter-tracker:sessions";
@@ -229,9 +230,11 @@ export function App() {
 
   const sessionsRef = useRef(sessions);
   const activeSessionIdRef = useRef<string | null>(null);
-  const sessionMutationTailRef = useRef<Promise<void>>(Promise.resolve());
+  // Saves, deletes and restores run one at a time across every window of the app.
+  const [sessionMutationQueue] = useState(() => createSessionMutationQueue());
   // True while a restore is running; saves wait for it (their browser write would race the restore).
   const restorePendingRef = useRef(0);
+  const newSessionSavePendingRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const browserRecorderRef = useRef<BrowserRecorder | null>(null);
   const startedAtRef = useRef<Date | null>(null);
@@ -275,7 +278,11 @@ export function App() {
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
+  // Bumped by every change of what the workspace shows or captures, so queued work can tell whether
+  // the user touched it meanwhile, even when it ends up back where it was.
+  const workspaceGenerationRef = useRef(0);
   const setViewedSession = (session: SavedSession | null) => {
+    workspaceGenerationRef.current += 1;
     viewedSessionRef.current = session;
     setViewedSessionState(session);
   };
@@ -789,6 +796,7 @@ export function App() {
     }
     // Recovery must not replace the workspace while this start is still waiting.
     startPendingRef.current = true;
+    workspaceGenerationRef.current += 1;
     try {
       if (selectedEngine.id !== "browser") {
         const ready = await ensureSelectedModelReady(transcription);
@@ -1164,13 +1172,19 @@ export function App() {
     setSessions(next);
   }
 
+  // Each mutation starts from the stored list: another window may have changed it before its
+  // storage event arrived here.
   function serializeSessionMutation<T>(mutation: () => Promise<T>): Promise<T> {
-    const operation = sessionMutationTailRef.current.then(mutation);
-    sessionMutationTailRef.current = operation.then(
-      () => undefined,
-      () => undefined,
-    );
-    return operation;
+    return sessionMutationQueue(() => {
+      try {
+        const stored = loadSessionsFromStorage();
+        sessionsRef.current = stored;
+        setSessions(stored);
+      } catch {
+        // Unreadable now; keep this window's list rather than dropping it.
+      }
+      return mutation();
+    });
   }
 
   async function saveSession() {
@@ -1207,64 +1221,86 @@ export function App() {
       await saveLoadedSession(loaded);
       return;
     }
-    // A capture is saved under its checkpoint id, so a checkpoint left behind by a crash between the
-    // save and its removal is recognized as saved instead of being recovered as a duplicate.
-    const captureId = captureIdRef.current;
-    const sessionId =
-      captureId && !sessionsRef.current.some((candidate) => candidate.id === captureId)
-        ? captureId
-        : crypto.randomUUID();
-    const descriptor = captureDescriptorRef.current;
-    const session: SavedSession = createSessionRecord({
-      id: sessionId,
-      // The capture's provenance travels with it; an edited saved session keeps the original's.
-      recordings:
-        descriptor && descriptor.sessionId === captureId
-          ? [{ ...descriptor, sessionId }]
-          : (loaded?.recordings.map((recording) => ({ ...recording, sessionId })) ?? []),
-      startedAt: startedAtRef.current?.toISOString() ?? new Date().toISOString(),
-      segments,
-      pauses,
-      report,
-      run: reportRun ?? {
-        id: crypto.randomUUID(),
-        createdAt: null,
-        analyzer: null,
-        usedAudio: null,
-        audioId: null,
-        // Saved before any analysis finished: the report was not computed from this observation.
-        inputId: UNKNOWN_INPUT_ID,
-      },
-      context: {
-        spokenLanguage: canonicalSpokenLanguage(sessionLanguageRef.current),
-        task: null,
-        condition: null,
-      },
-    });
-    const next = [session, ...sessionsRef.current].slice(0, 50);
-    try {
-      persistSessions(next);
-    } catch {
-      setMessage("Could not save the session: browser storage is full or unavailable");
+    // Until a queued save has stored the workspace, another click would store a second copy.
+    if (newSessionSavePendingRef.current) {
+      setMessage("Session is already being saved");
       return;
     }
-    if (captureId) {
-      // Left behind if this fails; the next start recognizes it as saved and removes it.
-      removeCaptureCheckpoint(captureCheckpointKey(captureId));
-      releaseWorkspaceCapture();
-    }
-    activeSessionIdRef.current = session.id;
-    // Later saves of this workspace append runs to this record instead of creating copies.
-    loadedSessionRef.current = session;
-    setViewedSession(session);
-    try {
-      const corpus = await serializeSessionMutation(() => saveSpeechCorpusSession(session));
-      setCorpusAnalysis(corpus);
-      setMessage("Session saved to corpus");
-    } catch {
-      setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
-      setMessage("Session saved locally");
-    }
+    const captureId = captureIdRef.current;
+    const descriptor = captureDescriptorRef.current;
+    const startedAt = startedAtRef.current?.toISOString() ?? new Date().toISOString();
+    const spokenLanguage = canonicalSpokenLanguage(sessionLanguageRef.current);
+    newSessionSavePendingRef.current = true;
+    const outcome = await serializeSessionMutation(async () => {
+      if (captureId && captureIdRef.current !== captureId) {
+        // An earlier queued save stored it, or the workspace set it aside while this one waited.
+        return sessionsRef.current.some((candidate) => candidate.id === captureId)
+          ? ("unchanged" as const)
+          : ("set-aside" as const);
+      }
+      // A capture is saved under its checkpoint id, so a checkpoint left behind by a crash between
+      // the save and its removal is recognized as saved instead of being recovered as a duplicate.
+      const sessionId =
+        captureId && !sessionsRef.current.some((candidate) => candidate.id === captureId)
+          ? captureId
+          : crypto.randomUUID();
+      const session: SavedSession = createSessionRecord({
+        id: sessionId,
+        // The capture's provenance travels with it; an edited saved session keeps the original's.
+        recordings:
+          descriptor && descriptor.sessionId === captureId
+            ? [{ ...descriptor, sessionId }]
+            : (loaded?.recordings.map((recording) => ({ ...recording, sessionId })) ?? []),
+        startedAt,
+        segments,
+        pauses,
+        report,
+        run: reportRun ?? {
+          id: crypto.randomUUID(),
+          createdAt: null,
+          analyzer: null,
+          usedAudio: null,
+          audioId: null,
+          // Saved before any analysis finished: the report was not computed from this observation.
+          inputId: UNKNOWN_INPUT_ID,
+        },
+        context: { spokenLanguage, task: null, condition: null },
+      });
+      try {
+        persistSessions([session, ...sessionsRef.current].slice(0, 50));
+      } catch {
+        return "failed" as const;
+      }
+      if (captureId) {
+        // Left behind if this fails; the next start recognizes it as saved and removes it.
+        removeCaptureCheckpoint(captureCheckpointKey(captureId));
+        releaseWorkspaceCapture();
+      }
+      activeSessionIdRef.current = session.id;
+      // Later saves of this workspace append runs to this record instead of creating copies.
+      loadedSessionRef.current = session;
+      setViewedSession(session);
+      try {
+        setCorpusAnalysis(await saveSpeechCorpusSession(session));
+        return "corpus" as const;
+      } catch {
+        setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
+        return "local" as const;
+      }
+    }).finally(() => {
+      newSessionSavePendingRef.current = false;
+    });
+    setMessage(
+      outcome === "failed"
+        ? "Could not save the session: browser storage is full or unavailable"
+        : outcome === "unchanged"
+          ? "Session is already saved"
+          : outcome === "set-aside"
+            ? "The recording was set aside before it was saved; recover it to save it"
+            : outcome === "corpus"
+              ? "Session saved to corpus"
+              : "Session saved locally",
+    );
   }
 
   // Fingerprint of the audio an analysis of the workspace would use now (null without audio).
@@ -1546,6 +1582,7 @@ export function App() {
   // Makes `id` the workspace capture, owned by this window until it is saved or set aside.
   function takeWorkspaceCapture(id: string, release: (() => void) | null) {
     releaseWorkspaceCapture();
+    workspaceGenerationRef.current += 1;
     captureIdRef.current = id;
     if (release) {
       releaseCaptureRef.current = release;
@@ -1746,6 +1783,8 @@ export function App() {
     key: string,
     release: () => void,
   ) {
+    // The workspace as recovery left it; opening a session or starting a capture changes it.
+    const workspaceAtStart = workspaceGenerationRef.current;
     const session = createSessionRecord({
       id: checkpoint.id,
       recordings: checkpoint.recording ? [checkpoint.recording] : [],
@@ -1760,29 +1799,50 @@ export function App() {
         condition: null,
       },
     });
-    try {
-      persistSessions([session, ...sessionsRef.current].slice(0, 50));
-    } catch {
+    // The checkpoint and its claim stay until the browser write succeeded under the lock.
+    const outcome = await serializeSessionMutation(async () => {
+      if (sessionsRef.current.some((candidate) => candidate.id === session.id)) {
+        removeCaptureCheckpoint(key);
+        release();
+        return "already-saved" as const;
+      }
+      try {
+        persistSessions([session, ...sessionsRef.current].slice(0, 50));
+      } catch {
+        release();
+        setInterruptedCaptures((current) =>
+          mergeInterruptedCaptures(current, [{ key, kind: "checkpoint", checkpoint }]),
+        );
+        return "failed" as const;
+      }
+      removeCaptureCheckpoint(key);
       release();
-      setInterruptedCaptures((current) =>
-        mergeInterruptedCaptures(current, [{ key, kind: "checkpoint", checkpoint }]),
-      );
-      setMessage("Could not save the recovered recording: browser storage is full or unavailable");
-      return;
-    }
-    removeCaptureCheckpoint(key);
-    release();
-    setInterimText("");
-    setSpeakerMatch(null);
-    resetChunkTranscription();
-    showSavedSession(session);
-    try {
-      const corpus = await serializeSessionMutation(() => saveSpeechCorpusSession(session));
-      setCorpusAnalysis(corpus);
-    } catch {
-      setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
-    }
-    setMessage("Recovered and saved the interrupted recording; its audio was not kept.");
+      // A capture, recording or opened session may have taken the workspace while this save waited.
+      if (
+        !captureIdRef.current &&
+        !startPendingRef.current &&
+        !isRecordingRef.current &&
+        workspaceGenerationRef.current === workspaceAtStart
+      ) {
+        setInterimText("");
+        setSpeakerMatch(null);
+        resetChunkTranscription();
+        showSavedSession(session);
+      }
+      try {
+        setCorpusAnalysis(await saveSpeechCorpusSession(session));
+      } catch {
+        setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
+      }
+      return "saved" as const;
+    });
+    setMessage(
+      outcome === "failed"
+        ? "Could not save the recovered recording: browser storage is full or unavailable"
+        : outcome === "already-saved"
+          ? "This recording was already saved"
+          : "Recovered and saved the interrupted recording; its audio was not kept.",
+    );
   }
 
   async function discardInterruptedCapture(capture: InterruptedCapture) {
