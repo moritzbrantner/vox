@@ -23,12 +23,13 @@ export function ModalDialog({
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
-    (dialog?.querySelector<HTMLElement>(FOCUSABLE) ?? dialog)?.focus();
-    // Focus that lands outside (a backdrop click, a programmatic move) is pulled back, so Tab
-    // handling below always starts inside the dialog.
+    // Registered first, so a modal opened over another one becomes topmost before it takes focus.
     if (dialog) {
       openModals.push(dialog);
     }
+    (dialog?.querySelector<HTMLElement>(FOCUSABLE) ?? dialog)?.focus();
+    // Focus that lands outside (a backdrop click, a programmatic move) is pulled back, so Tab
+    // handling below always starts inside the dialog.
     const keepFocusInside = (event: FocusEvent) => {
       if (
         dialog &&
