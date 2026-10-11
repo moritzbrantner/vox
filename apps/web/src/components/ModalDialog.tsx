@@ -21,7 +21,16 @@ export function ModalDialog({
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
     (dialog?.querySelector<HTMLElement>(FOCUSABLE) ?? dialog)?.focus();
+    // Focus that lands outside (a backdrop click, a programmatic move) is pulled back, so Tab
+    // handling below always starts inside the dialog.
+    const keepFocusInside = (event: FocusEvent) => {
+      if (dialog && event.target instanceof Node && !dialog.contains(event.target)) {
+        dialog.focus();
+      }
+    };
+    document.addEventListener("focusin", keepFocusInside);
     return () => {
+      document.removeEventListener("focusin", keepFocusInside);
       if (opener?.isConnected) {
         opener.focus();
       }
@@ -52,7 +61,16 @@ export function ModalDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-[#17201b]/40 p-4">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-[#17201b]/40 p-4"
+      // A backdrop press would otherwise move focus to the page behind the modal.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          dialogRef.current?.focus();
+        }
+      }}
+    >
       <div
         ref={dialogRef}
         className={`${panelClass} w-full max-w-md p-5 shadow-lg`}
