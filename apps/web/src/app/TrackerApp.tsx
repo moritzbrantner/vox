@@ -1777,6 +1777,12 @@ export function App() {
     key: string,
     release: () => void,
   ) {
+    // The workspace as recovery left it; opening a session or starting a capture changes it.
+    const workspaceAtStart = {
+      loaded: loadedSessionRef.current,
+      viewed: viewedSessionRef.current,
+      active: activeSessionIdRef.current,
+    };
     const session = createSessionRecord({
       id: checkpoint.id,
       recordings: checkpoint.recording ? [checkpoint.recording] : [],
@@ -1809,8 +1815,15 @@ export function App() {
       }
       removeCaptureCheckpoint(key);
       release();
-      // A capture or recording may have taken the workspace while this save waited.
-      if (!captureIdRef.current && !startPendingRef.current && !isRecordingRef.current) {
+      // A capture, recording or opened session may have taken the workspace while this save waited.
+      if (
+        !captureIdRef.current &&
+        !startPendingRef.current &&
+        !isRecordingRef.current &&
+        loadedSessionRef.current === workspaceAtStart.loaded &&
+        viewedSessionRef.current === workspaceAtStart.viewed &&
+        activeSessionIdRef.current === workspaceAtStart.active
+      ) {
         setInterimText("");
         setSpeakerMatch(null);
         resetChunkTranscription();
