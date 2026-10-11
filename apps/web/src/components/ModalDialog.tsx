@@ -4,6 +4,9 @@ import { panelClass } from "./styles";
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Open modals, innermost last; only the topmost one keeps focus inside itself.
+const openModals: HTMLElement[] = [];
+
 /** Modal dialog: focuses its first field, keeps Tab inside, closes on Escape, restores focus. */
 export function ModalDialog({
   title,
@@ -23,14 +26,26 @@ export function ModalDialog({
     (dialog?.querySelector<HTMLElement>(FOCUSABLE) ?? dialog)?.focus();
     // Focus that lands outside (a backdrop click, a programmatic move) is pulled back, so Tab
     // handling below always starts inside the dialog.
+    if (dialog) {
+      openModals.push(dialog);
+    }
     const keepFocusInside = (event: FocusEvent) => {
-      if (dialog && event.target instanceof Node && !dialog.contains(event.target)) {
+      if (
+        dialog &&
+        openModals[openModals.length - 1] === dialog &&
+        event.target instanceof Node &&
+        !dialog.contains(event.target)
+      ) {
         dialog.focus();
       }
     };
     document.addEventListener("focusin", keepFocusInside);
     return () => {
       document.removeEventListener("focusin", keepFocusInside);
+      const index = dialog ? openModals.lastIndexOf(dialog) : -1;
+      if (index >= 0) {
+        openModals.splice(index, 1);
+      }
       if (opener?.isConnected) {
         opener.focus();
       }
@@ -51,6 +66,10 @@ export function ModalDialog({
     const last = focusable[focusable.length - 1];
     if (!first || !last) {
       event.preventDefault();
+    } else if (document.activeElement === dialogRef.current) {
+      // Focus was pulled back to the container, which is not in the tab order.
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
     } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
