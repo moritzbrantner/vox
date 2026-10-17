@@ -269,6 +269,15 @@ describe("annotation revisions", () => {
     expect(() =>
       annotateSession(record, revision("a-4", { events: [{ ...event, endSeconds: -1 }] })),
     ).toThrow("end >= start");
+    expect(() =>
+      annotateSession(
+        annotated,
+        revision("a-7", { author: { role: "clinician", id: "rater-2" }, supersedes: "a-1" }),
+      ),
+    ).toThrow("belongs to another rater");
+    expect(() =>
+      annotateSession(annotated, revision("a-8", { author: { role: "self" }, supersedes: "a-1" })),
+    ).toThrow("belongs to another rater");
     expect(() => annotateSession(record, revision(""))).toThrow("non-empty id");
     expect(() => annotateSession(record, revision("a-6", { createdAt: "soon" }))).toThrow(
       "valid createdAt",
