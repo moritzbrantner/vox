@@ -1,9 +1,12 @@
 // Pure editing model for one rater's event spans. The editor never touches the observation or
 // another rater's revisions; saving appends a revision through `annotateSession`.
-import type { AnnotatedEvent, AnnotationRevision, AnnotatorRole, SessionRecord } from "./sessions";
-import { currentAnnotations } from "./sessions";
-
-export type AnnotationAuthor = { role: AnnotatorRole; id?: string };
+import type {
+  AnnotatedEvent,
+  AnnotationRater,
+  AnnotationRevision,
+  SessionRecord,
+} from "./sessions";
+import { currentAnnotations, sameRater } from "./sessions";
 
 export type AnnotationEditorState = {
   events: AnnotatedEvent[];
@@ -66,17 +69,13 @@ export function redoAnnotation(state: AnnotationEditorState): AnnotationEditorSt
 /** The author's current revision (not superseded), which their next save replaces. */
 export function currentRevisionBy(
   record: SessionRecord,
-  author: AnnotationAuthor,
+  author: AnnotationRater,
 ): AnnotationRevision | null {
   return (
     currentAnnotations(record)
-      .filter((revision) => sameAuthor(revision.author, author))
+      .filter((revision) => sameRater(revision.author, author))
       .at(-1) ?? null
   );
-}
-
-export function sameAuthor(a: AnnotationAuthor, b: AnnotationAuthor) {
-  return a.role === b.role && (a.id || null) === (b.id || null);
 }
 
 export function sameEvents(a: AnnotatedEvent[], b: AnnotatedEvent[]) {

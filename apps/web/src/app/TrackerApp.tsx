@@ -12,8 +12,12 @@ import {
   createSessionRecord,
   isAnalysisVerified,
   isReplayable,
+  adjudicationStart,
+  type AnnotationRater,
   annotateSession,
   currentRevisionBy,
+  declareValidation,
+  sessionValidation,
   reanalyzeSession,
   fallbackAnalyze as sharedFallbackAnalyze,
   type ModelPreparationFailure,
@@ -33,6 +37,7 @@ import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKe
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { BlindReview } from "../components/BlindReview";
+import { ValidationPanel } from "../components/ValidationPanel";
 import { buttonClass } from "../components/styles";
 import { DashboardHeader } from "../components/DashboardHeader";
 import {
@@ -295,6 +300,8 @@ export function App() {
   const [keepAudio, setKeepAudio] = useState(false);
   // Blind review (vox#23): only the workbench of a neutrally named session is shown.
   const [blindReview, setBlindReview] = useState<{ sessionId: string | null } | null>(null);
+  // Session whose two-rater validation is being adjudicated in the workbench.
+  const [adjudicatingId, setAdjudicatingId] = useState<string | null>(null);
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
@@ -1542,11 +1549,15 @@ export function App() {
     );
   }
 
-  // Appends the rater's revision to the stored session, replacing only that rater's previous
-  // revision. Returns false when nothing was saved, so the editor keeps the unsaved spans.
-  async function saveAnnotation(sessionId: string, request: AnnotationSaveRequest) {
+  // Applies one change to the latest stored copy of a session through the mutation queue. Returns
+  // false when nothing was saved, so the caller keeps what the user entered.
+  async function updateStoredSession(
+    sessionId: string,
+    update: (latest: SavedSession) => SavedSession,
+    what: string,
+  ) {
     if (restorePendingRef.current > 0) {
-      setMessage("Wait for the session restore to finish before saving annotations");
+      setMessage(`Wait for the session restore to finish before saving the ${what}`);
       return false;
     }
     const outcome = await serializeSessionMutation(async () => {
@@ -1554,16 +1565,12 @@ export function App() {
       if (!latest) {
         return "deleted" as const;
       }
-      const updated = annotateSession(latest, {
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        author: request.author,
-        // Outside blind review the analysis is on screen next to the workbench.
-        basedOnRunId: request.blind ? null : latest.analysis.id,
-        events: request.events,
-        status: request.status,
-        supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
-      });
+      let updated: SavedSession;
+      try {
+        updated = update(latest);
+      } catch (error) {
+        return { rejected: errorMessage(error) };
+      }
       try {
         persistSessions(
           sessionsRef.current.map((candidate) =>
@@ -1585,18 +1592,49 @@ export function App() {
         return "local" as const;
       }
     });
+    const capitalized = what[0].toUpperCase() + what.slice(1);
     setMessage(
-      outcome === "saved"
-        ? "Annotation saved to the session"
-        : outcome === "local"
-          ? isDesktopApp()
-            ? "Annotation saved locally; the desktop corpus still has the earlier annotations"
-            : "Annotation saved to the session"
-          : outcome === "deleted"
-            ? "Session was deleted; annotation not saved"
-            : "Could not save the annotation: browser storage is full or unavailable",
+      typeof outcome === "object"
+        ? `${capitalized} not saved: ${outcome.rejected}`
+        : outcome === "saved"
+          ? `${capitalized} saved to the session`
+          : outcome === "local"
+            ? isDesktopApp()
+              ? `${capitalized} saved locally; the desktop corpus still has the earlier version`
+              : `${capitalized} saved to the session`
+            : outcome === "deleted"
+              ? `Session was deleted; ${what} not saved`
+              : `Could not save the ${what}: browser storage is full or unavailable`,
     );
     return outcome === "saved" || outcome === "local";
+  }
+
+  // Appends the rater's revision, replacing only that rater's previous revision.
+  function saveAnnotation(sessionId: string, request: AnnotationSaveRequest) {
+    return updateStoredSession(
+      sessionId,
+      (latest) =>
+        annotateSession(latest, {
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          author: request.author,
+          // Outside blind review the analysis is on screen next to the workbench.
+          basedOnRunId: request.blind ? null : latest.analysis.id,
+          events: request.events,
+          status: request.status,
+          supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
+          ...(request.adjudicates ? { adjudicates: request.adjudicates } : {}),
+        }),
+      request.adjudicates ? "adjudication" : "annotation",
+    );
+  }
+
+  function declareSessionValidation(sessionId: string, raters: [AnnotationRater, AnnotationRater]) {
+    return updateStoredSession(
+      sessionId,
+      (latest) => declareValidation(latest, { declaredAt: new Date().toISOString(), raters }),
+      "validation declaration",
+    );
   }
 
   // Removing a voiceprint deletes the local copy and, when a server holds it, the server copy;
@@ -2566,13 +2604,23 @@ export function App() {
       )}
       {viewedSession && (
         <AnnotationWorkbench
-          key={viewedSession.id}
+          key={`${viewedSession.id}:${adjudicatingId === viewedSession.id ? "adjudicate" : "annotate"}`}
           session={viewedSession}
+          adjudication={
+            adjudicatingId === viewedSession.id ? adjudicationTarget(viewedSession) : null
+          }
           audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
           disabled={captureInProgress}
           onSave={(request) => saveAnnotation(viewedSession.id, request)}
         />
       )}
+      <ValidationPanel
+        sessions={sessions}
+        session={viewedSession}
+        disabled={captureInProgress}
+        onDeclare={declareSessionValidation}
+        onAdjudicate={setAdjudicatingId}
+      />
       <EvidenceExportPanel sessions={sessions} />
       {exportDialogOpen && (
         <ExportBackupDialog onClose={() => setExportDialogOpen(false)} onDownload={exportJson} />
@@ -2599,6 +2647,16 @@ async function analyze(request: {
 }
 
 /** The desktop command reports its detector version; older desktop builds leave it unknown. */
+function adjudicationTarget(session: SavedSession) {
+  const validation = sessionValidation(session);
+  const [first, second] = validation?.ratings ?? [null, null];
+  if (!validation?.comparison || !first || !second) return null;
+  return {
+    adjudicates: [first.id, second.id] as [string, string],
+    startEvents: adjudicationStart(validation.comparison),
+  };
+}
+
 export function desktopAnalyzer(version: string | undefined): AnalyzerIdentity {
   return {
     producer: "desktopNative",
