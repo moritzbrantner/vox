@@ -1,6 +1,6 @@
 # Annotation handbook
 
-Version: 0.1 (2026-10-17) · Status: **provisional, no clinical review yet** · Tracking: #23, intended use #19
+Version: 0.2 (2026-10-17) · Status: **provisional, no clinical review yet** · Tracking: #23, intended use #19
 
 How people mark speech events in the annotation workbench so that a human reference is
 independent of the app's analysis. Until a stuttering-specialist SLT has reviewed it, nothing
@@ -52,13 +52,27 @@ The last three are span conditions, not disfluency events. They are never counte
   another rater's draft stays untouched.
 - Self-labels (role "self"), clinician labels and researcher labels stay distinguishable.
 
-## Disagreements
+## Disagreements and agreement
 
-Two raters annotate the same predeclared sessions independently. Disagreements are recorded, not
-overwritten. An adjudicator resolves them in a separate revision that cites both rater revisions,
-and agreement between the raters is reported as measured. Human agreement is not assumed.
-(Tooling: #23.)
+1. **Declare first.** In "Two-rater validation", name the two raters for a session before either
+   of them annotates it. A rater who already annotated that session cannot be declared.
+2. **Rate independently.** Each rater annotates in Blind review under their declared role and
+   name, then saves with "Save as reference". Only a rater's current reference revision counts.
+3. **Measure.** The panel compares the two references:
+   - Spans with the same label **agree** when they overlap or start within 250 ms. Each span is
+     paired at most once, with the largest overlap first.
+   - **Event agreement** = 2 × agreed disfluency events / all disfluency events of both raters.
+     Span conditions (no speech, overlap, unusable) can agree but are not counted as events.
+   - **Time agreement** is Cohen's kappa over 10 ms frames for "some disfluency is marked here".
+   - Every **disagreement** is listed: label differs, only rater 1, only rater 2.
+4. **Adjudicate.** A third person, who is neither rater, starts from the agreed spans plus every
+   disputed span of both raters, decides each one and saves. The adjudication cites both rater
+   revisions and becomes the session's human reference. The raters' revisions stay unchanged.
+
+Agreement is reported as measured. It is never assumed, and synthetic examples are never
+presented as clinical validation.
 
 ## Changelog
 
 - 0.1 (2026-10-17): initial provisional handbook.
+- 0.2 (2026-10-17): two-rater declaration, agreement measures and adjudication.

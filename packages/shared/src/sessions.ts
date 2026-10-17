@@ -75,9 +75,22 @@ export type SessionRecord = {
   priorAnalyses: AnalysisRun[];
   /** Human annotation revisions, oldest first. Append-only; analysis never changes them. */
   annotations: AnnotationRevision[];
+  /** Two-rater validation declared for this session before either rater annotated it. */
+  validation?: ValidationDeclaration;
+};
+
+export type ValidationDeclaration = {
+  declaredAt: string;
+  raters: [AnnotationRater, AnnotationRater];
 };
 
 export type AnnotatorRole = "self" | "clinician" | "researcher";
+
+export type AnnotationRater = { role: AnnotatorRole; id?: string };
+
+export function sameRater(a: AnnotationRater, b: AnnotationRater) {
+  return a.role === b.role && (a.id || null) === (b.id || null);
+}
 
 /**
  * Disfluency events plus annotation-only labels for spans that are not disfluencies: no speech,
@@ -108,7 +121,7 @@ export type AnnotatedEvent = {
 export type AnnotationRevision = {
   id: string;
   createdAt: string;
-  author: { role: AnnotatorRole; id?: string };
+  author: AnnotationRater;
   /** Analysis run shown while annotating; null when annotated without one (blind). */
   basedOnRunId: string | null;
   /** Fingerprint of the observation the annotation describes. */
@@ -117,6 +130,11 @@ export type AnnotationRevision = {
   status: "draft" | "accepted";
   /** Earlier revision this one replaces; the earlier one stays in the history. */
   supersedes: string | null;
+  /**
+   * For an adjudication: the two declared raters' revisions it resolves. The adjudicator is
+   * neither rater, and the rater revisions stay unchanged.
+   */
+  adjudicates?: [string, string];
 };
 
 /** Version-1 records: what the web app stored before this schema. */
@@ -246,12 +264,26 @@ export function annotateSession(
       throw new Error(`Annotation revision ${revision.supersedes} does not exist.`);
     }
     // A rater replaces only their own revision; another rater's draft stays current.
-    if (
-      replaced.author.role !== revision.author.role ||
-      (replaced.author.id || null) !== (revision.author.id || null)
-    ) {
+    if (!sameRater(replaced.author, revision.author)) {
       throw new Error(`Annotation revision ${revision.supersedes} belongs to another rater.`);
     }
+  }
+  if (revision.adjudicates) {
+    const raters = record.validation?.raters;
+    if (!raters) {
+      throw new Error(`Session ${record.id} has no declared two-rater validation.`);
+    }
+    if (raters.some((rater) => sameRater(rater, revision.author))) {
+      throw new Error("A rater cannot adjudicate their own validation.");
+    }
+    revision.adjudicates.forEach((id, index) => {
+      const rated = record.annotations.find((existing) => existing.id === id);
+      if (!rated || !sameRater(rated.author, raters[index])) {
+        throw new Error(
+          `Annotation revision ${id} is not a revision of declared rater ${index + 1}.`,
+        );
+      }
+    });
   }
   const runIds = sessionAnalysisRuns(record).map((run) => run.id);
   if (revision.basedOnRunId !== null && !runIds.includes(revision.basedOnRunId)) {
@@ -275,16 +307,45 @@ export function annotateSession(
   };
 }
 
+/**
+ * Declares two-rater validation for a session. It must be declared before either rater has
+ * annotated it, so the subset is chosen independently of the annotations.
+ */
+export function declareValidation(
+  record: SessionRecord,
+  declaration: ValidationDeclaration,
+): SessionRecord {
+  if (record.validation) {
+    throw new Error(`Session ${record.id} already has a declared validation.`);
+  }
+  if (!Number.isFinite(Date.parse(declaration.declaredAt))) {
+    throw new Error("A validation declaration needs a valid declaredAt timestamp.");
+  }
+  const [first, second] = declaration.raters;
+  if (sameRater(first, second)) {
+    throw new Error("Validation needs two different raters.");
+  }
+  if (
+    record.annotations.some((revision) =>
+      declaration.raters.some((rater) => sameRater(rater, revision.author)),
+    )
+  ) {
+    throw new Error("A declared rater has already annotated this session.");
+  }
+  return { ...record, validation: { declaredAt: declaration.declaredAt, raters: [first, second] } };
+}
+
 /** Revisions not replaced by a later one, oldest first. */
 export function currentAnnotations(record: SessionRecord): AnnotationRevision[] {
   const superseded = new Set(record.annotations.map((revision) => revision.supersedes));
   return record.annotations.filter((revision) => !superseded.has(revision.id));
 }
 
-/** The latest current revision accepted as a human reference, if any. */
+/** The current accepted human reference: the latest adjudication, else the latest accepted revision. */
 export function acceptedAnnotation(record: SessionRecord): AnnotationRevision | null {
   const accepted = currentAnnotations(record).filter((revision) => revision.status === "accepted");
-  return accepted.at(-1) ?? null;
+  // An adjudication resolves the validation raters' disagreements, so it is the reference.
+  return accepted.filter((revision) => revision.adjudicates).at(-1) ?? accepted.at(-1) ?? null;
 }
 
 export type AnalysisSource = "automated" | "humanReference";

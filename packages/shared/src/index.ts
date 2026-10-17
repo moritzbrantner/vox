@@ -1148,5 +1148,6 @@ export * from "./capture";
 export * from "./outcomes";
 export * from "./sessions";
 export * from "./annotations";
+export * from "./validation";
 export * from "./consent";
 export * from "./evidenceExport";
