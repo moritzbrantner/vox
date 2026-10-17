@@ -1188,5 +1188,6 @@ export * from "./annotations";
 export * from "./validation";
 export * from "./annotationExchange";
 export * from "./comparison";
+export * from "./transcriptText";
 export * from "./consent";
 export * from "./evidenceExport";

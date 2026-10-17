@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
   Download,
   HardDriveDownload,
@@ -50,7 +50,10 @@ type RecordingWorkspaceProps = {
   transcriptionChunks: TranscriptionChunkRecord[];
   hasAnalysisEvents: boolean;
   level: number;
+  /** Verbatim transcript: the analysis evidence. */
   transcript: string;
+  /** Display-only rendering without fillers, repeats and fragments. */
+  readableTranscript: string;
   interimText: string;
   canEnroll: boolean;
   onEnroll: () => void;
@@ -89,6 +92,7 @@ export function RecordingWorkspace({
   hasAnalysisEvents,
   level,
   transcript,
+  readableTranscript,
   interimText,
   canEnroll,
   onEnroll,
@@ -101,6 +105,7 @@ export function RecordingWorkspace({
   savedSessionCount,
   onRestoreSessions,
 }: RecordingWorkspaceProps) {
+  const [readableView, setReadableView] = useState(false);
   const restoreDisabled =
     isRecording ||
     isTranscribing ||
@@ -200,9 +205,20 @@ export function RecordingWorkspace({
         ))}
       </div>
 
+      <label className="mb-2 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={readableView}
+          onChange={(change) => setReadableView(change.target.checked)}
+        />
+        Readable view (display only; analysis always uses the verbatim transcript)
+      </label>
       <div className="min-h-36 rounded-lg border border-[#dae2dd] p-4">
-        <div className="break-words text-xl leading-relaxed text-[#17201b] max-sm:text-lg">
-          {transcript || "Transcript will appear here."}
+        <div
+          className="break-words text-xl leading-relaxed text-[#17201b] max-sm:text-lg"
+          aria-label={readableView ? "Readable transcript" : "Verbatim transcript"}
+        >
+          {(readableView ? readableTranscript : transcript) || "Transcript will appear here."}
           {interimText && <span className="text-[#7b8780]"> {interimText}</span>}
         </div>
       </div>
