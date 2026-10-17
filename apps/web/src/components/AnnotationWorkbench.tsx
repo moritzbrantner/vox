@@ -11,7 +11,7 @@ import {
   roundAnnotationSeconds,
   sameAuthor,
   sameEvents,
-  type StutterKind,
+  type AnnotationLabel,
   undoAnnotation,
 } from "@stutter-tracker/shared";
 import { Play, Redo2, Trash2, Undo2 } from "lucide-react";
@@ -32,14 +32,19 @@ export type AnnotationSaveRequest = {
   author: AnnotationAuthor;
   events: AnnotatedEvent[];
   status: "draft" | "accepted";
+  /** Annotated without seeing any analysis (blind review). */
+  blind: boolean;
 };
 
-const KIND_LABELS: Record<StutterKind, string> = {
+const KIND_LABELS: Record<AnnotationLabel, string> = {
   soundRepetition: "Sound/syllable repetition",
   wordRepetition: "Word repetition",
   prolongation: "Prolongation",
   block: "Block",
   filler: "Filler / typical disfluency",
+  noSpeech: "No speech",
+  overlap: "Overlapping speakers",
+  unusable: "Unusable / uncertain audio",
 };
 const ROLE_LABELS: Record<AnnotatorRole, string> = {
   self: "Self (my own speech)",
@@ -58,12 +63,15 @@ const COARSE_NUDGE_SECONDS = 0.1;
 export function AnnotationWorkbench({
   session,
   audio,
+  blind = false,
   disabled,
   onSave,
 }: {
   session: SavedSession;
   /** Audio the user kept with this session; null when none was kept. */
   audio: KeptSessionAudio | null;
+  /** Blind review: the rater has not been shown this session's analysis. */
+  blind?: boolean;
   disabled: boolean;
   onSave: (request: AnnotationSaveRequest) => Promise<boolean>;
 }) {
@@ -125,7 +133,7 @@ export function AnnotationWorkbench({
     setSaving(true);
     try {
       // On failure the edits stay on screen, so nothing typed is lost.
-      if (await onSave({ author, events: editor.events, status })) {
+      if (await onSave({ author, events: editor.events, status, blind })) {
         setEditor(createAnnotationEditor(editor.events));
       }
     } finally {
@@ -388,7 +396,7 @@ function EventFields({
 }: {
   label: string;
   event: AnnotatedEvent;
-  onKind: (kind: StutterKind) => void;
+  onKind: (kind: AnnotationLabel) => void;
   onCertainty: (certainty: AnnotatedEvent["certainty"]) => void;
   onNote: (note: string) => void;
   onTime: (edge: "start" | "end", seconds: number) => boolean | void;
@@ -403,7 +411,7 @@ function EventFields({
           className={controlClass}
           aria-label={`${label} kind`}
           value={event.kind}
-          onChange={(change) => onKind(change.target.value as StutterKind)}
+          onChange={(change) => onKind(change.target.value as AnnotationLabel)}
         >
           {Object.entries(KIND_LABELS).map(([value, text]) => (
             <option key={value} value={value}>

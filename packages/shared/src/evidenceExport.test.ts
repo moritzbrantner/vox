@@ -135,6 +135,9 @@ describe("evidence export", () => {
       events: [
         { kind: "wordRepetition", startSeconds: 0, endSeconds: 0.5, certainty: "certain" },
         { kind: "block", startSeconds: 1, endSeconds: 1.4, certainty: "possible" },
+        // Span conditions are not disfluency events and are not counted.
+        { kind: "noSpeech", startSeconds: 2, endSeconds: 3, certainty: "certain" },
+        { kind: "unusable", startSeconds: 3, endSeconds: 4, certainty: "possible" },
       ],
       status: "accepted",
       supersedes: null,
