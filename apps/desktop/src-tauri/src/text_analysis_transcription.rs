@@ -2,9 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub use audio_analysis_transcription::{
-    WhisperCppConfig, WhisperCppModel, WhisperCppModelStore, WhisperCppProgressEvent,
-};
+pub use audio_analysis_transcription::{WhisperCppConfig, WhisperCppModel, WhisperCppModelStore};
 pub use text_transcripts::{TranscriptSegment, TranscriptionResult};
 
 #[derive(Debug, thiserror::Error)]
@@ -100,28 +98,6 @@ impl WhisperCppTranscriber {
         Self {
             inner: audio_analysis_transcription::NativeWhisperCppTranscriber::new(config),
         }
-    }
-
-    pub fn with_model_store(mut self, store: WhisperCppModelStore) -> Self {
-        self.inner = self.inner.with_model_store(store);
-        self
-    }
-
-    pub fn on_progress<F>(mut self, callback: F) -> Self
-    where
-        F: FnMut(WhisperCppProgressEvent) + 'static,
-    {
-        self.inner = self.inner.on_progress(callback);
-        self
-    }
-
-    pub fn transcribe_with_progress(
-        &mut self,
-        input: &Path,
-        progress: &mut dyn FnMut(WhisperCppProgressEvent),
-    ) -> Result<TranscriptionResult> {
-        let transcript = self.inner.transcribe_file_with_progress(input, progress)?;
-        Ok(whisper_cpp_result(transcript))
     }
 }
 

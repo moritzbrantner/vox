@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::speech_analysis::{
-    analyze_speech_session_impl, AnalyzeSpeechRequest, SpeechAnalysisError, StutterKind,
-};
+use crate::speech_analysis::{AnalyzeSpeechRequest, SpeechAnalysisError, StutterKind};
 
 const BENCHMARK_KINDS: [StutterKind; 5] = [
     StutterKind::WordRepetition,
@@ -355,7 +353,7 @@ fn speaker_safe_split(
 fn evaluate_existing_detector(cases: &[BaselineCase]) -> Result<BenchmarkReport, BenchmarkError> {
     let mut clips = Vec::with_capacity(cases.len());
     for case in cases {
-        let report = analyze_speech_session_impl(case.request.clone())
+        let report = crate::speech_pipeline::analyze_speech_session(case.request.clone())
             .map_err(|error| BenchmarkError::Detector(error.to_string()))?;
         let observed = report
             .events
@@ -1031,7 +1029,7 @@ fn score_clip(
     if (duration_seconds - expected_seconds).abs() > expected_seconds * DURATION_TOLERANCE {
         return Ok(ClipOutcome::Unreadable(entry.id));
     }
-    let report = match analyze_speech_session_impl(AnalyzeSpeechRequest {
+    let report = match crate::speech_pipeline::analyze_speech_session(AnalyzeSpeechRequest {
         segments: Vec::new(),
         pauses: Vec::new(),
         session_started_at: None,

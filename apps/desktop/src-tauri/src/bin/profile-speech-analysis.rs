@@ -5,8 +5,11 @@ mod video_analysis_core {
     pub use media_core::DetectError;
 }
 
+// Shared with the app; this binary uses only the analysis entry point.
+#[allow(dead_code)]
 #[path = "../speech_analysis.rs"]
 mod speech_analysis;
+#[allow(dead_code)]
 #[path = "../speech_pipeline.rs"]
 mod speech_pipeline;
 

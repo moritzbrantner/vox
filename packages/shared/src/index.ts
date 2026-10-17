@@ -31,7 +31,39 @@ export type StutterEvent = {
   confidence: number;
   source?: "transcript" | "acoustic" | "fused";
   acousticEvidence?: AcousticEvidence;
+  /**
+   * Native analysis only, for stages on the typed evidence path: a stable event id, the
+   * observations (in `AnalysisReport.observations`) it rests on and why it was decided.
+   */
+  evidence?: EventEvidence;
 };
+
+export type EventEvidence = {
+  id: string;
+  supporting: string[];
+  explanation: string;
+};
+
+export type ObservationChannel = "transcript" | "pause" | "acoustic" | "speaker";
+
+/** A missing channel is never evidence of absence. */
+export type MissingObservationReason = "noAudio" | "noFinalTranscript" | "noSpeakerAttribution";
+
+/** Product-level observation with a stable id derived from its position in the input. */
+export type SpeechObservation = {
+  id: string;
+  channel: ObservationChannel;
+  startSeconds: number;
+  endSeconds: number;
+  /** Interpolated times are estimates spread over a segment, not measurements. */
+  timing: "observed" | "interpolatedWithinSegment" | "session";
+  confidence?: number;
+} & (
+  | { type: "transcriptToken"; raw: string; normalized: string; segment: number; token: number }
+  | { type: "pause"; index: number; afterText?: string }
+  | { type: "audioWindow"; sampleCount: number; sampleRate: number }
+  | { type: "missing"; reason: MissingObservationReason }
+);
 
 export type AcousticEvidence = {
   energyRms?: number;
@@ -75,6 +107,11 @@ export type AnalysisReport = {
   captureMetrics?: import("./capture").MeasuredCaptureMetrics;
   /** Capture-quality gate of the run; reports without it predate the gate. */
   captureQuality?: import("./capture").RunCaptureQuality;
+  /**
+   * Native analysis only: observations that events cite, plus explicit missing channels.
+   * Absent from the shared fallback and older reports, which do not produce typed evidence.
+   */
+  observations?: SpeechObservation[];
 };
 
 export type SpeechStats = {
