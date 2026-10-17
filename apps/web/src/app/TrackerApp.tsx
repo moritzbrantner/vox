@@ -33,6 +33,13 @@ import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKe
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { DashboardHeader } from "../components/DashboardHeader";
+import {
+  deleteSessionAudio,
+  getSessionAudio,
+  type KeptSessionAudio,
+  putSessionAudio,
+  retainSessionAudio,
+} from "../storage/sessionAudio";
 import { EvidenceExportPanel } from "../components/EvidenceExportPanel";
 import { ExportBackupDialog } from "../components/ExportBackupDialog";
 import { InsightsSidebar } from "../components/InsightsSidebar";
@@ -281,6 +288,9 @@ export function App() {
   // analysis: live analysis does not run, and a late result never replaces it. The ref is set
   // synchronously so a result that lands before React applies the load is still ignored.
   const [viewedSession, setViewedSessionState] = useState<SavedSession | null>(null);
+  // Audio the user kept with the viewed session (vox#23), loaded from this device's storage.
+  const [viewedAudio, setViewedAudio] = useState<KeptSessionAudio | null>(null);
+  const [keepAudio, setKeepAudio] = useState(false);
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
@@ -292,6 +302,29 @@ export function App() {
     viewedSessionRef.current = session;
     setViewedSessionState(session);
   };
+  const viewedSessionId = viewedSession?.id ?? null;
+  useEffect(() => {
+    setViewedAudio(null);
+    if (!viewedSessionId) return;
+    let current = true;
+    getSessionAudio(viewedSessionId).then(
+      (audio) => {
+        if (current && audio) setViewedAudio((shown) => shown ?? audio);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [viewedSessionId]);
+  // Kept audio whose session is gone (deleted, dropped past the session limit, or an earlier
+  // removal failed) is removed on start.
+  useEffect(() => {
+    void serializeSessionMutation(() =>
+      retainSessionAudio(sessionsRef.current.map((session) => session.id)),
+    ).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const nextChunkStartSampleRef = useRef(0);
   const chunkIndexRef = useRef(0);
   const chunkTranscriptionTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -1234,9 +1267,14 @@ export function App() {
     }
     const captureId = captureIdRef.current;
     const descriptor = captureDescriptorRef.current;
+    const keptCapture =
+      keepAudio && captureId && descriptor?.sessionId === captureId
+        ? captureForKeeping(descriptor)
+        : null;
     const startedAt = startedAtRef.current?.toISOString() ?? new Date().toISOString();
     const spokenLanguage = canonicalSpokenLanguage(sessionLanguageRef.current);
     newSessionSavePendingRef.current = true;
+    let audioOutcome: "kept" | string | null = null;
     const outcome = await serializeSessionMutation(async () => {
       if (captureId && captureIdRef.current !== captureId) {
         // An earlier queued save stored it, or the workspace set it aside while this one waited.
@@ -1286,6 +1324,20 @@ export function App() {
       // Later saves of this workspace append runs to this record instead of creating copies.
       loadedSessionRef.current = session;
       setViewedSession(session);
+      if (keptCapture) {
+        const kept = { ...keptCapture, sessionId: session.id, keptAt: new Date().toISOString() };
+        try {
+          await putSessionAudio(kept);
+          if (viewedSessionRef.current?.id === session.id) setViewedAudio(kept);
+          audioOutcome = "kept";
+        } catch (error) {
+          audioOutcome = errorMessage(error);
+        }
+      }
+      // Sessions past the limit were dropped above; so is any audio kept with them.
+      await retainSessionAudio(sessionsRef.current.map((candidate) => candidate.id)).catch(
+        () => undefined,
+      );
       try {
         setCorpusAnalysis(await saveSpeechCorpusSession(session));
         return "corpus" as const;
@@ -1296,8 +1348,14 @@ export function App() {
     }).finally(() => {
       newSessionSavePendingRef.current = false;
     });
+    const audioNote =
+      audioOutcome === null
+        ? ""
+        : audioOutcome === "kept"
+          ? "; audio kept on this device for review"
+          : `; the audio could not be kept (${audioOutcome})`;
     setMessage(
-      outcome === "failed"
+      (outcome === "failed"
         ? "Could not save the session: browser storage is full or unavailable"
         : outcome === "unchanged"
           ? "Session is already saved"
@@ -1305,8 +1363,25 @@ export function App() {
             ? "The recording was set aside before it was saved; recover it to save it"
             : outcome === "corpus"
               ? "Session saved to corpus"
-              : "Session saved locally",
+              : "Session saved locally") +
+        (outcome === "corpus" || outcome === "local" ? audioNote : ""),
     );
+  }
+
+  // The raw capture as the workspace holds it, with what is needed to place it on the session
+  // clock. The browser engine keeps a rolling window, so earlier samples may be gone.
+  function captureForKeeping(descriptor: RecordingDescriptor) {
+    const samples = Float32Array.from(samplesRef.current);
+    const sampleRate = sampleRateRef.current;
+    if (!samples.length || sampleRate <= 0) return null;
+    return {
+      sampleRate,
+      samples,
+      startOffsetSeconds: descriptor.startOffsetSeconds,
+      discontinuities: descriptor.discontinuities.map((gap) => ({ ...gap })),
+      droppedSeconds: Math.max(0, capturedSampleCountRef.current - samples.length) / sampleRate,
+      audioId: audioFingerprint(samples, sampleRate),
+    };
   }
 
   // Fingerprint of the audio an analysis of the workspace would use now (null without audio).
@@ -1941,6 +2016,12 @@ export function App() {
           throw new Error("its unsaved copy in browser storage could not be removed");
         }
         dropInterruptedCapture(captureCheckpointKey(session.id));
+        try {
+          await deleteSessionAudio(session.id);
+        } catch (error) {
+          throw new Error(`its kept audio could not be removed (${errorMessage(error)})`);
+        }
+        if (viewedSessionRef.current?.id === session.id) setViewedAudio(null);
         const remainingSessions = sessionsRef.current.filter(
           (candidate) => candidate.id !== session.id,
         );
@@ -1996,6 +2077,14 @@ export function App() {
   }
 
   async function applyRestore(restored: SavedSession[]) {
+    // Backups never contain audio, so a restore replaces kept audio with none. Removed first, in
+    // one transaction: if it fails, nothing has been replaced.
+    try {
+      await retainSessionAudio([]);
+    } catch (error) {
+      throw new Error(`audio kept for review could not be removed: ${errorMessage(error)}`);
+    }
+    setViewedAudio(null);
     // The native corpus is replaced first, so browser storage (shared with other windows) never
     // holds a restore that could still fail; a native failure therefore changes nothing.
     if (isDesktopApp()) {
@@ -2355,6 +2444,12 @@ export function App() {
           canEnroll={samplesRef.current.length > 0}
           onEnroll={saveSpeakerProfile}
           onSave={saveSession}
+          keepAudio={keepAudio}
+          onKeepAudioChange={
+            !viewedSession && captureDescriptorRef.current && samplesRef.current.length > 0
+              ? setKeepAudio
+              : undefined
+          }
           saveDisabled={captureInProgress || isAnalyzing}
           storageWarning={checkpointError ?? claimError}
           onExport={() => setExportDialogOpen(true)}
@@ -2422,6 +2517,7 @@ export function App() {
         <AnnotationWorkbench
           key={viewedSession.id}
           session={viewedSession}
+          audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
           disabled={captureInProgress}
           onSave={(request) => saveAnnotation(viewedSession.id, request)}
         />

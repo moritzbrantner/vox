@@ -83,6 +83,7 @@
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@vitejs/plugin-react": "4.7.0",
+        "fake-indexeddb": "6.2.6",
         "jsdom": "29.1.1",
         "oxfmt": "0.51.0",
         "typescript": "5.8.3",
@@ -949,6 +950,8 @@
     "expo-server": ["expo-server@55.0.9", "", {}, "sha512-N5Ipn1NwqaJzEm+G97o0Jbe4g/th3R/16N1DabnYryXKCiZwDkK13/w3VfGkQN9LOOaBP+JIRxGf4M8lQKPzyA=="],
 
     "exponential-backoff": ["exponential-backoff@3.1.3", "", {}, "sha512-ZgEeZXj30q+I0EN+CbSSpIyPaJ5HVQD18Z1m+u1FXbAeT94mr1zw50q4q6jiiC447Nl/YTcIYSAftiGqetwXCA=="],
+
+    "fake-indexeddb": ["fake-indexeddb@6.2.6", "", {}, "sha512-ihhmr0KoET51jT8R4YhbUYuLLvr1qqO6INISygtN16i8loR8kAxtAUr4+EKHTSMjL+lggaAn4OC7DRqzrNgnuQ=="],
 
     "fast-json-stable-stringify": ["fast-json-stable-stringify@2.1.0", "", {}, "sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw=="],
 

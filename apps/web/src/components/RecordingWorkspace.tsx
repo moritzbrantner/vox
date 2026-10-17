@@ -55,6 +55,10 @@ type RecordingWorkspaceProps = {
   canEnroll: boolean;
   onEnroll: () => void;
   onSave: () => void;
+  /** Whether the next save of a new recording also keeps its raw audio on this device. */
+  keepAudio?: boolean;
+  /** Absent when the workspace has no recorded audio to keep. */
+  onKeepAudioChange?: (keep: boolean) => void;
   /** Saving waits until capture and transcription have finished. */
   saveDisabled?: boolean;
   /** Shown while the unsaved capture cannot be checkpointed. */
@@ -89,6 +93,8 @@ export function RecordingWorkspace({
   canEnroll,
   onEnroll,
   onSave,
+  keepAudio = false,
+  onKeepAudioChange,
   saveDisabled = false,
   storageWarning = null,
   onExport,
@@ -226,6 +232,19 @@ export function RecordingWorkspace({
           <Save size={17} />
           Save
         </button>
+        {onKeepAudioChange && (
+          <label
+            className="flex items-center gap-2 text-sm"
+            title="Keeps this recording's raw audio in this browser for annotation review. Deleting the session removes it; backups do not include it."
+          >
+            <input
+              type="checkbox"
+              checked={keepAudio}
+              onChange={(change) => onKeepAudioChange(change.target.checked)}
+            />
+            Keep audio on this device for review
+          </label>
+        )}
         <button className={buttonClass} onClick={onExport}>
           <Download size={17} />
           Export
