@@ -184,7 +184,9 @@ describe("App integration", () => {
 
     await userEvent.click(sessionButton!);
 
-    expect(await screen.findAllByText("I I want to start")).toHaveLength(2);
+    // Workspace transcript, session transcript and the annotation workbench's transcript.
+    expect(await screen.findAllByText("I I want to start")).toHaveLength(3);
+    expect(screen.getByRole("region", { name: "Annotate events" })).toBeInTheDocument();
     // The stored report is shown as saved; it has no chunk breakdown and none is computed.
     expect(await screen.findByText("Repeated word sequence")).toBeInTheDocument();
 

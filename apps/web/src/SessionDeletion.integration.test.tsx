@@ -433,8 +433,7 @@ describe("deleting a saved session (vox#87)", () => {
       expect(keysMentioning(ALPHA.id)).toEqual([]);
     });
 
-    // An annotation mutation is not reachable through the UI today (annotateSession has no caller
-    // in apps/web), so (b) is covered through the queued reanalysis above.
+    // (b) is covered through the queued reanalysis above; annotation saves use the same queue.
 
     it.each([
       { accept: false, expected: [BETA.id] },

@@ -12,6 +12,8 @@ import {
   createSessionRecord,
   isAnalysisVerified,
   isReplayable,
+  annotateSession,
+  currentRevisionBy,
   reanalyzeSession,
   fallbackAnalyze as sharedFallbackAnalyze,
   type ModelPreparationFailure,
@@ -29,6 +31,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createGapTracker } from "../audio/captureGaps";
 import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKernel";
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
+import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { DashboardHeader } from "../components/DashboardHeader";
 import { EvidenceExportPanel } from "../components/EvidenceExportPanel";
 import { ExportBackupDialog } from "../components/ExportBackupDialog";
@@ -1460,6 +1463,63 @@ export function App() {
     );
   }
 
+  // Appends the rater's revision to the stored session, replacing only that rater's previous
+  // revision. Returns false when nothing was saved, so the editor keeps the unsaved spans.
+  async function saveAnnotation(sessionId: string, request: AnnotationSaveRequest) {
+    if (restorePendingRef.current > 0) {
+      setMessage("Wait for the session restore to finish before saving annotations");
+      return false;
+    }
+    const outcome = await serializeSessionMutation(async () => {
+      const latest = sessionsRef.current.find((candidate) => candidate.id === sessionId);
+      if (!latest) {
+        return "deleted" as const;
+      }
+      const updated = annotateSession(latest, {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        author: request.author,
+        // The workbench shows the current analysis next to the transcript, so it is not blind.
+        basedOnRunId: latest.analysis.id,
+        events: request.events,
+        status: request.status,
+        supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
+      });
+      try {
+        persistSessions(
+          sessionsRef.current.map((candidate) =>
+            candidate.id === updated.id ? updated : candidate,
+          ),
+        );
+      } catch {
+        return "failed" as const;
+      }
+      if (viewedSessionRef.current?.id === updated.id) {
+        loadedSessionRef.current = updated;
+        setViewedSession(updated);
+      }
+      try {
+        setCorpusAnalysis(await saveSpeechCorpusSession(updated));
+        return "saved" as const;
+      } catch {
+        setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
+        return "local" as const;
+      }
+    });
+    setMessage(
+      outcome === "saved"
+        ? "Annotation saved to the session"
+        : outcome === "local"
+          ? isDesktopApp()
+            ? "Annotation saved locally; the desktop corpus still has the earlier annotations"
+            : "Annotation saved to the session"
+          : outcome === "deleted"
+            ? "Session was deleted; annotation not saved"
+            : "Could not save the annotation: browser storage is full or unavailable",
+    );
+    return outcome === "saved" || outcome === "local";
+  }
+
   // Removing a voiceprint deletes the local copy and, when a server holds it, the server copy;
   // the message says which happened. Removals run one at a time from the latest list.
   function removeSpeakerProfile(speaker: SpeakerProfile) {
@@ -2358,6 +2418,14 @@ export function App() {
         onSessionReanalyze={(session) => void reanalyzeSavedSession(session)}
         reanalyzingSessionIds={reanalyzingSessionIds}
       />
+      {viewedSession && (
+        <AnnotationWorkbench
+          key={viewedSession.id}
+          session={viewedSession}
+          disabled={captureInProgress}
+          onSave={(request) => saveAnnotation(viewedSession.id, request)}
+        />
+      )}
       <EvidenceExportPanel sessions={sessions} />
       {exportDialogOpen && (
         <ExportBackupDialog onClose={() => setExportDialogOpen(false)} onDownload={exportJson} />

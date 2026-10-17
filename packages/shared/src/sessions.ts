@@ -211,7 +211,7 @@ export function reanalyzeSession(
 
 /**
  * Records a human annotation revision. Earlier revisions are kept; a revision may replace one
- * earlier revision (`supersedes`). Analysis runs never change annotations.
+ * earlier revision of the same rater (`supersedes`). Analysis runs never change annotations.
  */
 export function annotateSession(
   record: SessionRecord,
@@ -223,11 +223,18 @@ export function annotateSession(
   if (record.annotations.some((existing) => existing.id === revision.id)) {
     throw new Error(`Annotation revision ${revision.id} is already recorded.`);
   }
-  if (
-    revision.supersedes !== null &&
-    !record.annotations.some((existing) => existing.id === revision.supersedes)
-  ) {
-    throw new Error(`Annotation revision ${revision.supersedes} does not exist.`);
+  if (revision.supersedes !== null) {
+    const replaced = record.annotations.find((existing) => existing.id === revision.supersedes);
+    if (!replaced) {
+      throw new Error(`Annotation revision ${revision.supersedes} does not exist.`);
+    }
+    // A rater replaces only their own revision; another rater's draft stays current.
+    if (
+      replaced.author.role !== revision.author.role ||
+      (replaced.author.id || null) !== (revision.author.id || null)
+    ) {
+      throw new Error(`Annotation revision ${revision.supersedes} belongs to another rater.`);
+    }
   }
   const runIds = sessionAnalysisRuns(record).map((run) => run.id);
   if (revision.basedOnRunId !== null && !runIds.includes(revision.basedOnRunId)) {

@@ -1147,5 +1147,6 @@ function longestRun(value: string) {
 export * from "./capture";
 export * from "./outcomes";
 export * from "./sessions";
+export * from "./annotations";
 export * from "./consent";
 export * from "./evidenceExport";
