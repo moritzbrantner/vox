@@ -5,6 +5,7 @@ import { captureCoverageNote, type CaptureCoverage, type RunCaptureQuality } fro
 import type { StutterKind } from "./index";
 import {
   acceptedAnnotation,
+  isDisfluencyLabel,
   analyzerKey,
   isAnalysisVerified,
   type SessionRecord,
@@ -252,9 +253,12 @@ export function buildEvidenceExport(
           ? {
               authorRole: reference.author.role,
               annotatedAt: reference.createdAt,
-              eventCount: reference.events.filter((event) => event.certainty === "certain").length,
-              possibleEventCount: reference.events.filter((event) => event.certainty === "possible")
-                .length,
+              eventCount: reference.events.filter(
+                (event) => isDisfluencyLabel(event.kind) && event.certainty === "certain",
+              ).length,
+              possibleEventCount: reference.events.filter(
+                (event) => isDisfluencyLabel(event.kind) && event.certainty === "possible",
+              ).length,
             }
           : null,
       };

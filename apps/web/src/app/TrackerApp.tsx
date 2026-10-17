@@ -32,6 +32,8 @@ import { createGapTracker } from "../audio/captureGaps";
 import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKernel";
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
+import { BlindReview } from "../components/BlindReview";
+import { buttonClass } from "../components/styles";
 import { DashboardHeader } from "../components/DashboardHeader";
 import {
   deleteSessionAudio,
@@ -291,6 +293,8 @@ export function App() {
   // Audio the user kept with the viewed session (vox#23), loaded from this device's storage.
   const [viewedAudio, setViewedAudio] = useState<KeptSessionAudio | null>(null);
   const [keepAudio, setKeepAudio] = useState(false);
+  // Blind review (vox#23): only the workbench of a neutrally named session is shown.
+  const [blindReview, setBlindReview] = useState<{ sessionId: string | null } | null>(null);
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
@@ -302,7 +306,7 @@ export function App() {
     viewedSessionRef.current = session;
     setViewedSessionState(session);
   };
-  const viewedSessionId = viewedSession?.id ?? null;
+  const viewedSessionId = blindReview ? blindReview.sessionId : (viewedSession?.id ?? null);
   useEffect(() => {
     setViewedAudio(null);
     if (!viewedSessionId) return;
@@ -1554,8 +1558,8 @@ export function App() {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
         author: request.author,
-        // The workbench shows the current analysis next to the transcript, so it is not blind.
-        basedOnRunId: latest.analysis.id,
+        // Outside blind review the analysis is on screen next to the workbench.
+        basedOnRunId: request.blind ? null : latest.analysis.id,
         events: request.events,
         status: request.status,
         supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
@@ -2379,6 +2383,35 @@ export function App() {
       .then(task);
   }
 
+  if (blindReview) {
+    const blindSession = sessions.find((session) => session.id === blindReview.sessionId) ?? null;
+    return (
+      <main className="mx-auto min-h-screen max-w-[1420px] bg-[#f5f7f5] p-5 text-[#17201b] max-sm:p-3">
+        <BlindReview
+          sessions={sessions}
+          selectedId={blindSession?.id ?? null}
+          message={message}
+          onSelect={(sessionId) => setBlindReview({ sessionId })}
+          onExit={() => {
+            setBlindReview(null);
+            setMessage("Blind review ended");
+          }}
+        >
+          {blindSession && (
+            <AnnotationWorkbench
+              key={blindSession.id}
+              session={blindSession}
+              audio={viewedAudio?.sessionId === blindSession.id ? viewedAudio : null}
+              blind
+              disabled={captureInProgress}
+              onSave={(request) => saveAnnotation(blindSession.id, request)}
+            />
+          )}
+        </BlindReview>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto min-h-screen max-w-[1420px] bg-[#f5f7f5] p-5 text-[#17201b] max-sm:p-3">
       <DashboardHeader
@@ -2513,6 +2546,24 @@ export function App() {
         onSessionReanalyze={(session) => void reanalyzeSavedSession(session)}
         reanalyzingSessionIds={reanalyzingSessionIds}
       />
+      {sessions.length > 0 && (
+        <section className="mb-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={captureInProgress}
+            onClick={() => {
+              setMessage("");
+              setBlindReview({ sessionId: null });
+            }}
+          >
+            Start blind review
+          </button>
+          <span className="text-sm text-[#647169]">
+            Annotate saved sessions without seeing their analysis, dates or conditions.
+          </span>
+        </section>
+      )}
       {viewedSession && (
         <AnnotationWorkbench
           key={viewedSession.id}

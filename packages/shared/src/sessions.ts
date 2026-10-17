@@ -79,8 +79,25 @@ export type SessionRecord = {
 
 export type AnnotatorRole = "self" | "clinician" | "researcher";
 
+/**
+ * Disfluency events plus annotation-only labels for spans that are not disfluencies: no speech,
+ * overlapping speakers and audio unusable for judging (see docs/annotation-handbook.md).
+ */
+export type AnnotationLabel = StutterKind | "noSpeech" | "overlap" | "unusable";
+
+export const NON_EVENT_ANNOTATION_LABELS: readonly AnnotationLabel[] = [
+  "noSpeech",
+  "overlap",
+  "unusable",
+];
+
+/** Whether a label marks a disfluency event (counted) rather than a span condition. */
+export function isDisfluencyLabel(label: AnnotationLabel): label is StutterKind {
+  return !NON_EVENT_ANNOTATION_LABELS.includes(label);
+}
+
 export type AnnotatedEvent = {
-  kind: StutterKind;
+  kind: AnnotationLabel;
   startSeconds: number;
   endSeconds: number;
   /** "possible" for uncertain labels, e.g. a silent block the audio alone cannot establish. */
