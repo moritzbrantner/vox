@@ -106,9 +106,12 @@ function isSessionProvenance(value: Record<string, unknown>) {
   return (
     value.recordings.every((recording) => recording.sessionId === value.id) &&
     new Set(runIds).size === runIds.length &&
+    isOptionalValidation(value.validation) &&
+    isOptionalReviewCopy(value.reviewCopy) &&
     isAnnotationHistory(
       value.annotations,
-      runIds,
+      // A review copy holds revisions made against the origin's analysis runs, which it lacks.
+      value.reviewCopy === undefined ? runIds : null,
       observationFingerprint(
         value.segments as SavedSession["segments"],
         value.pauses as SavedSession["pauses"],
@@ -118,7 +121,7 @@ function isSessionProvenance(value: Record<string, unknown>) {
 }
 
 /** Optional on older version-2 records; when present, ids are unique and references resolve. */
-function isAnnotationHistory(value: unknown, runIdList: string[], inputId: string) {
+function isAnnotationHistory(value: unknown, runIdList: string[] | null, inputId: string) {
   if (value === undefined) {
     return true;
   }
@@ -128,13 +131,17 @@ function isAnnotationHistory(value: unknown, runIdList: string[], inputId: strin
   // One pass: ids are unique, only an earlier revision can be replaced (self-references and
   // cycles would hide every revision), and each revision describes this session's observation.
   const earlier = new Set<string>();
-  const runIds = new Set(runIdList);
+  const runIds = runIdList && new Set(runIdList);
   for (const revision of value) {
     const id = revision.id as string;
+    const adjudicates = revision.adjudicates as string[] | undefined;
     if (
       earlier.has(id) ||
       (revision.supersedes !== null && !earlier.has(revision.supersedes as string)) ||
-      (revision.basedOnRunId !== null && !runIds.has(revision.basedOnRunId as string)) ||
+      (runIds !== null &&
+        revision.basedOnRunId !== null &&
+        !runIds.has(revision.basedOnRunId as string)) ||
+      (adjudicates !== undefined && !adjudicates.every((cited) => earlier.has(cited))) ||
       revision.inputId !== inputId
     ) {
       return false;
@@ -160,14 +167,47 @@ function isAnnotationRevision(value: unknown): value is Record<string, unknown> 
     Array.isArray(value.events) &&
     value.events.every(isAnnotatedEvent) &&
     (value.status === "draft" || value.status === "accepted") &&
-    (value.supersedes === null || typeof value.supersedes === "string")
+    (value.supersedes === null || typeof value.supersedes === "string") &&
+    (value.adjudicates === undefined ||
+      (Array.isArray(value.adjudicates) &&
+        value.adjudicates.length === 2 &&
+        value.adjudicates.every((id) => typeof id === "string" && id.length > 0)))
+  );
+}
+
+function isRater(value: unknown) {
+  return (
+    isRecord(value) &&
+    (value.role === "self" || value.role === "clinician" || value.role === "researcher") &&
+    isOptionalString(value.id)
+  );
+}
+
+function isOptionalValidation(value: unknown) {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      isValidDateString(value.declaredAt) &&
+      Array.isArray(value.raters) &&
+      value.raters.length === 2 &&
+      value.raters.every(isRater))
+  );
+}
+
+function isOptionalReviewCopy(value: unknown) {
+  return (
+    value === undefined ||
+    (isRecord(value) && isValidDateString(value.exportedAt) && isValidDateString(value.importedAt))
   );
 }
 
 function isAnnotatedEvent(value: unknown) {
   return (
     isRecord(value) &&
-    isStutterKind(value.kind) &&
+    (isStutterKind(value.kind) ||
+      value.kind === "noSpeech" ||
+      value.kind === "overlap" ||
+      value.kind === "unusable") &&
     isFiniteNumber(value.startSeconds) &&
     isFiniteNumber(value.endSeconds) &&
     value.endSeconds >= value.startSeconds &&

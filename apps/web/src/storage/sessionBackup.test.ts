@@ -335,3 +335,90 @@ describe("session backup", () => {
     ).toThrow(`Backup contains more than ${MAX_RESTORED_SESSIONS} sessions.`);
   });
 });
+
+describe("stored annotation shapes from the annotation workbench (vox#23)", () => {
+  const base = migrateSessionRecord(legacySession);
+  const raters = [
+    { role: "clinician" as const, id: "A" },
+    { role: "clinician" as const, id: "B" },
+  ] as [{ role: "clinician"; id: string }, { role: "clinician"; id: string }];
+  const revision = (id: string, author: { role: "clinician"; id: string }, extra = {}) => ({
+    id,
+    createdAt: "2026-10-17T10:00:00.000Z",
+    author,
+    basedOnRunId: null,
+    events: [
+      {
+        kind: "noSpeech" as const,
+        startSeconds: 1.2,
+        endSeconds: 2,
+        certainty: "certain" as const,
+      },
+      {
+        kind: "block" as const,
+        startSeconds: 0.2,
+        endSeconds: 0.4,
+        certainty: "possible" as const,
+      },
+    ],
+    status: "accepted" as const,
+    supersedes: null,
+    ...extra,
+  });
+
+  test("validation, adjudications and span labels survive a reload and a backup", async () => {
+    const { declareValidation } = await import("@stutter-tracker/shared");
+    let record = declareValidation(base, { declaredAt: "2026-10-17T09:00:00.000Z", raters });
+    record = annotateSession(record, revision("a", raters[0]));
+    record = annotateSession(record, revision("b", raters[1]));
+    record = annotateSession(
+      record,
+      revision("c", { role: "clinician", id: "C" }, { adjudicates: ["a", "b"] }),
+    );
+    const restored = parseSessionBackup(
+      JSON.parse(JSON.stringify(createSessionBackup([record], new Date()))),
+    );
+    expect(restored).toEqual([record]);
+  });
+
+  test("a review copy keeps revisions made against the origin's analysis runs", () => {
+    const copy = {
+      ...base,
+      reviewCopy: {
+        exportedAt: "2026-10-17T10:00:00.000Z",
+        importedAt: "2026-10-17T11:00:00.000Z",
+      },
+      annotations: [
+        {
+          ...revision("origin", raters[0]),
+          basedOnRunId: "origin-run",
+          inputId: observationFingerprint(base.segments, base.pauses),
+        },
+      ],
+    };
+    const restored = parseSessionBackup(
+      JSON.parse(JSON.stringify(createSessionBackup([copy], new Date()))),
+    );
+    expect(restored).toEqual([copy]);
+    // Without the review-copy marker an unknown run reference is still refused.
+    const { reviewCopy: _marker, ...own } = copy;
+    expect(() =>
+      parseSessionBackup(JSON.parse(JSON.stringify(createSessionBackup([own], new Date())))),
+    ).toThrow();
+  });
+
+  test("an adjudication citing a missing revision is refused", () => {
+    const record = {
+      ...base,
+      annotations: [
+        {
+          ...revision("c", { role: "clinician", id: "C" }, { adjudicates: ["a", "b"] }),
+          inputId: observationFingerprint(base.segments, base.pauses),
+        },
+      ],
+    };
+    expect(() =>
+      parseSessionBackup(JSON.parse(JSON.stringify(createSessionBackup([record], new Date())))),
+    ).toThrow();
+  });
+});
