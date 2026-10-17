@@ -29,9 +29,9 @@ export type ProgressComparability = {
   reanalysisHelps: boolean;
   /** Some reasons concern the speaking context, which reanalysis cannot change. */
   contextDiffers: boolean;
-  /** No point records its speaking task (the app does not ask yet). */
+  /** No point records its speaking task (tag it in "Compare two sessions"). */
   taskUnrecorded: boolean;
-  /** No point records its assistance condition (the app does not ask yet). */
+  /** No point records its assistance condition (tag it in "Compare two sessions"). */
   conditionUnrecorded: boolean;
 };
 
@@ -69,7 +69,7 @@ export function progressComparability(points: SessionHistoryPoint[]): ProgressCo
   let contextDiffers = false;
   // Same split as outcome comparisons: language, task and assistance condition. Unknown task or
   // condition on every point is reported separately (contextUnrecorded): flagging it as a
-  // mismatch would show the warning on every chart, since the app does not record them yet.
+  // mismatch would show the warning on every chart, since most sessions are not tagged.
   for (const [field, label] of [
     ["spokenLanguage", "languages"],
     ["task", "speaking tasks"],

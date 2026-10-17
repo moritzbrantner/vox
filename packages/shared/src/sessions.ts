@@ -10,6 +10,7 @@ import type {
 } from "./index";
 import {
   type AssistanceCondition,
+  canonicalSpokenLanguage,
   type SpeakingTask,
   type SpokenLanguage,
   UNKNOWN_SPOKEN_LANGUAGE,
@@ -338,6 +339,35 @@ export function declareValidation(
     throw new Error("A declared rater has already annotated this session.");
   }
   return { ...record, validation: { declaredAt: declaration.declaredAt, raters: [first, second] } };
+}
+
+/**
+ * Records the speaking task and assistance condition of a saved session, and its spoken language
+ * when none was recorded. A recorded language is never changed: analysis runs were bound to it.
+ * The observation, analyses and annotations are untouched.
+ */
+export function tagSessionContext(
+  record: SessionRecord,
+  tags: {
+    task: SpeakingTask | null;
+    condition: AssistanceCondition | null;
+    spokenLanguage?: SpokenLanguage;
+  },
+): SessionRecord {
+  let spokenLanguage = record.context.spokenLanguage;
+  if (tags.spokenLanguage !== undefined) {
+    const declared = canonicalSpokenLanguage(tags.spokenLanguage);
+    if (declared !== spokenLanguage) {
+      if (canonicalSpokenLanguage(spokenLanguage) !== UNKNOWN_SPOKEN_LANGUAGE) {
+        throw new Error("A recorded spoken language cannot be changed.");
+      }
+      spokenLanguage = declared;
+    }
+  }
+  if (tags.condition?.kind === "assisted" && !tags.condition.aidId.trim()) {
+    throw new Error("An assisted condition needs the aid that was used.");
+  }
+  return { ...record, context: { spokenLanguage, task: tags.task, condition: tags.condition } };
 }
 
 /** Revisions not replaced by a later one, oldest first. */
