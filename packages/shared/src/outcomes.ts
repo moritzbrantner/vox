@@ -8,6 +8,66 @@ export const SPEECH_LANGUAGE_ROLLOUT = [
   { code: "es", stage: "later", validated: false },
 ] as const;
 
+/**
+ * "available": works the same in every language (nothing language-specific to evaluate);
+ * "evaluated": has evaluation evidence for this language; "notEvaluated": runs, unmeasured.
+ */
+export type CapabilityStatus = "available" | "evaluated" | "notEvaluated" | "notAvailable";
+
+export type LanguageCapabilities = {
+  recordingAndReview: CapabilityStatus;
+  transcription: CapabilityStatus;
+  eventDetection: CapabilityStatus;
+  reviewedPractice: CapabilityStatus;
+  /** What the statuses mean for this language. */
+  note: string;
+};
+
+/**
+ * Published per-language capability matrix (vox#28). A capability is "evaluated" only with
+ * evaluation evidence for that language; a translated interface or a multilingual model is not.
+ */
+export const LANGUAGE_CAPABILITIES: Record<"en" | "de" | "es", LanguageCapabilities> = {
+  en: {
+    recordingAndReview: "available",
+    transcription: "notEvaluated",
+    eventDetection: "notEvaluated",
+    reviewedPractice: "notAvailable",
+    note: "First language. Transcription and event detection run but have no disfluency-specific evaluation yet; no clinician-reviewed practice exists.",
+  },
+  de: {
+    recordingAndReview: "available",
+    transcription: "notEvaluated",
+    eventDetection: "notEvaluated",
+    reviewedPractice: "notAvailable",
+    note: "Later language. Event detection uses rules written for English plus a few German fillers; results are not validated for German.",
+  },
+  es: {
+    recordingAndReview: "available",
+    transcription: "notEvaluated",
+    eventDetection: "notEvaluated",
+    reviewedPractice: "notAvailable",
+    note: "Later language. Browser speech recognition is not offered for Spanish; Whisper models can transcribe it. Event detection is not validated for Spanish.",
+  },
+};
+
+/** Capabilities of a spoken language; other and unknown languages have none evaluated. */
+export function languageCapabilities(tag: SpokenLanguage): LanguageCapabilities {
+  const language = canonicalSpokenLanguage(tag);
+  return (
+    LANGUAGE_CAPABILITIES[language as keyof typeof LANGUAGE_CAPABILITIES] ?? {
+      recordingAndReview: "available",
+      transcription: "notEvaluated",
+      eventDetection: "notAvailable",
+      reviewedPractice: "notAvailable",
+      note:
+        language === UNKNOWN_SPOKEN_LANGUAGE
+          ? "The spoken language is not recorded, so no language-specific result applies."
+          : "Not in the rollout. Recording and manual review work; automated results are not interpreted for this language.",
+    }
+  );
+}
+
 /** BCP-47 primary language subtag of the recorded speech, or "unknown". Never the UI language. */
 export type SpokenLanguage = string;
 export const UNKNOWN_SPOKEN_LANGUAGE = "unknown";

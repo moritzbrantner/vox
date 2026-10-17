@@ -1,7 +1,9 @@
 import {
   type AssistanceCondition,
   canonicalSpokenLanguage,
+  type CapabilityStatus,
   compareSessions,
+  LANGUAGE_CAPABILITIES,
   type SessionSide,
   type SpeakingTask,
   UNKNOWN_SPOKEN_LANGUAGE,
@@ -19,6 +21,12 @@ const TASKS: Record<SpeakingTask["kind"], string> = {
   other: "Other",
 };
 const LANGUAGES = { en: "English", de: "German", es: "Spanish" } as const;
+const STATUS: Record<CapabilityStatus, string> = {
+  available: "Available",
+  evaluated: "Evaluated",
+  notEvaluated: "Runs, not evaluated",
+  notAvailable: "Not available",
+};
 const VERDICTS = {
   lower: "Fewer reviewed events per speaking minute in session 2.",
   higher: "More reviewed events per speaking minute in session 2.",
@@ -68,6 +76,39 @@ export function SessionComparisonPanel({
         Compares reviewed labels of two sessions with the same language and speaking task. Tag a
         session's task and condition first.
       </p>
+
+      <details className="mb-3 text-sm">
+        <summary className="cursor-pointer">Language support</summary>
+        <table className="mt-2 border-collapse" aria-label="Language support">
+          <thead>
+            <tr>
+              <th className="pr-3 text-left">Language</th>
+              <th className="pr-3 text-left">Recording and review</th>
+              <th className="pr-3 text-left">Transcription</th>
+              <th className="pr-3 text-left">Event detection</th>
+              <th className="text-left">Reviewed practice</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(LANGUAGE_CAPABILITIES).map(([code, capabilities]) => (
+              <tr key={code} title={capabilities.note}>
+                <td className="pr-3">{LANGUAGES[code as keyof typeof LANGUAGES]}</td>
+                <td className="pr-3">{STATUS[capabilities.recordingAndReview]}</td>
+                <td className="pr-3">{STATUS[capabilities.transcription]}</td>
+                <td className="pr-3">{STATUS[capabilities.eventDetection]}</td>
+                <td>{STATUS[capabilities.reviewedPractice]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <ul className={cx("m-0 mt-2 pl-5", mutedTextClass)}>
+          {Object.entries(LANGUAGE_CAPABILITIES).map(([code, capabilities]) => (
+            <li key={code}>
+              {LANGUAGES[code as keyof typeof LANGUAGES]}: {capabilities.note}
+            </li>
+          ))}
+        </ul>
+      </details>
 
       {session && !session.reviewCopy && (
         <ContextForm

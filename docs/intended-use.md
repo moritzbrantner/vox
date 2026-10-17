@@ -27,6 +27,17 @@ It contains no personal health information. Changing a decision means bumping th
 
 Unresolved clinical approval means: no treatment claims, no exercise prescription and no clinician-reviewed label on any content.
 
+## Language capability matrix
+
+Source: `LANGUAGE_CAPABILITIES` in `packages/shared/src/outcomes.ts` (shown in the app under "Compare two sessions"). A capability is *evaluated* only with evaluation evidence for that language.
+
+| Language | Recording and review | Transcription | Event detection | Reviewed practice |
+| -------- | -------------------- | ------------- | --------------- | ----------------- |
+| English (`en`) | Available | Runs, not evaluated | Runs, not evaluated | Not available |
+| German (`de`) | Available | Runs, not evaluated | Runs, not evaluated (English rules) | Not available |
+| Spanish (`es`) | Available | Runs, not evaluated (Whisper only) | Runs, not evaluated | Not available |
+| Other / unknown | Available | Runs, not evaluated | Not available | Not available |
+
 ## Product categories
 
 Kept separate in UI, data and claims:
