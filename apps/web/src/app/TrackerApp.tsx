@@ -19,6 +19,7 @@ import {
   type AnnotationExchange,
   decodeSamples,
   declareValidation,
+  tagSessionContext,
   mergeAnnotationExchange,
   parseAnnotationExchange,
   reviewCopyFromExchange,
@@ -43,6 +44,7 @@ import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { BlindReview } from "../components/BlindReview";
 import { ValidationPanel } from "../components/ValidationPanel";
+import { type ContextTags, SessionComparisonPanel } from "../components/SessionComparisonPanel";
 import { AnnotationExchangePanel } from "../components/AnnotationExchangePanel";
 import { buttonClass } from "../components/styles";
 import { DashboardHeader } from "../components/DashboardHeader";
@@ -1730,6 +1732,24 @@ export function App() {
     );
   }
 
+  function tagContext(sessionId: string, tags: ContextTags) {
+    return updateStoredSession(
+      sessionId,
+      (latest) => {
+        const previous = latest.context.condition;
+        // Re-tagging the same aid keeps the settings recorded with it.
+        const condition =
+          tags.condition?.kind === "assisted" &&
+          previous?.kind === "assisted" &&
+          previous.aidId === tags.condition.aidId
+            ? previous
+            : tags.condition;
+        return tagSessionContext(latest, { ...tags, condition });
+      },
+      "session context",
+    );
+  }
+
   function declareSessionValidation(sessionId: string, raters: [AnnotationRater, AnnotationRater]) {
     return updateStoredSession(
       sessionId,
@@ -2730,6 +2750,12 @@ export function App() {
         disabled={captureInProgress}
         onDeclare={declareSessionValidation}
         onAdjudicate={setAdjudicatingId}
+      />
+      <SessionComparisonPanel
+        sessions={ownSessions(sessions)}
+        session={viewedSession}
+        disabled={captureInProgress}
+        onTag={tagContext}
       />
       <AnnotationExchangePanel
         session={viewedSession}

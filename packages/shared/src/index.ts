@@ -1150,5 +1150,6 @@ export * from "./sessions";
 export * from "./annotations";
 export * from "./validation";
 export * from "./annotationExchange";
+export * from "./comparison";
 export * from "./consent";
 export * from "./evidenceExport";
