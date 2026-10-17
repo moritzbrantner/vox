@@ -6,79 +6,79 @@
       {
         "package": "moenarch-audio-analysis-core",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-core"
       },
       {
         "package": "moenarch-audio-analysis-fourier",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-fourier"
       },
       {
         "package": "moenarch-audio-analysis-pitch",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-pitch"
       },
       {
         "package": "moenarch-audio-analysis-recognition",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-recognition"
       },
       {
         "package": "moenarch-audio-analysis-rhythm",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-rhythm"
       },
       {
         "package": "moenarch-audio-analysis-speakers",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-speakers"
       },
       {
         "package": "moenarch-audio-analysis-transcription",
         "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "15418c70cf332b98e9e1ec32668200e1bf0a7bc9",
+        "rev": "1733abb72cdeef96b01000cd2064c068c9128c25",
         "localPath": "../audio-analysis/crates/audio/audio-analysis-transcription"
       },
       {
         "package": "moenarch-text-core",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "rev": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
         "localPath": "../nlp-stack/crates/text/text-core"
       },
       {
         "package": "moenarch-text-lexical",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "rev": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
         "localPath": "../nlp-stack/crates/text/text-lexical"
       },
       {
         "package": "moenarch-text-linguistics",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "rev": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
         "localPath": "../nlp-stack/crates/text/text-linguistics"
       },
       {
         "package": "moenarch-text-generation",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "rev": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
         "localPath": "../nlp-stack/crates/text/text-generation"
       },
       {
         "package": "moenarch-text-transcripts",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "rev": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
         "localPath": "../nlp-stack/crates/text/text-transcripts"
       },
       {
         "package": "moenarch-media-core",
         "git": "https://github.com/moritzbrantner/moenarch-foundation",
-        "rev": "fb51ab465ecd4d8086ac37ad0a9a2268b570e09f",
+        "rev": "9a162dfd44d3cae7f88ad993de79defc0ac94cd6",
         "localPath": "../moenarch-foundation/crates/media/media-core"
       }
     ]
