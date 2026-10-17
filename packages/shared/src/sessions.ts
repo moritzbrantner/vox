@@ -77,6 +77,11 @@ export type SessionRecord = {
   annotations: AnnotationRevision[];
   /** Two-rater validation declared for this session before either rater annotated it. */
   validation?: ValidationDeclaration;
+  /**
+   * Set on a session created from someone else's annotation exchange file: it holds their
+   * transcript for review only, has no analysis, and is not part of this user's own speech data.
+   */
+  reviewCopy?: { exportedAt: string; importedAt: string };
 };
 
 export type ValidationDeclaration = {

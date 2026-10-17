@@ -69,6 +69,8 @@ The last three are span conditions, not disfluency events. They are never counte
    disputed span of both raters, decides each one and saves. The adjudication cites both rater
    revisions and becomes the session's human reference. The raters' revisions stay unchanged.
 
+Raters on other devices receive the session through **Exchange annotations** (a file needing clinician-sharing consent; permitted use: review only, no redistribution, no model training) and send their revisions back the same way.
+
 Agreement is reported as measured. It is never assumed, and synthetic examples are never
 presented as clinical validation.
 

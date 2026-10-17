@@ -16,7 +16,12 @@ import {
   type AnnotationRater,
   annotateSession,
   currentRevisionBy,
+  type AnnotationExchange,
+  decodeSamples,
   declareValidation,
+  mergeAnnotationExchange,
+  parseAnnotationExchange,
+  reviewCopyFromExchange,
   sessionValidation,
   reanalyzeSession,
   fallbackAnalyze as sharedFallbackAnalyze,
@@ -38,6 +43,7 @@ import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { BlindReview } from "../components/BlindReview";
 import { ValidationPanel } from "../components/ValidationPanel";
+import { AnnotationExchangePanel } from "../components/AnnotationExchangePanel";
 import { buttonClass } from "../components/styles";
 import { DashboardHeader } from "../components/DashboardHeader";
 import {
@@ -820,7 +826,9 @@ export function App() {
 
   const todayStats = useMemo(() => {
     const now = new Date().toDateString();
-    const todays = sessions.filter((session) => new Date(session.startedAt).toDateString() === now);
+    const todays = ownSessions(sessions).filter(
+      (session) => new Date(session.startedAt).toDateString() === now,
+    );
     // Sessions whose capture failed the quality gate have no event count to add.
     const totalEvents = todays.reduce(
       (sum, session) => sum + (isScoreWithheld(session.report) ? 0 : session.report.stutterCount),
@@ -1584,6 +1592,9 @@ export function App() {
         loadedSessionRef.current = updated;
         setViewedSession(updated);
       }
+      if (updated.reviewCopy) {
+        return "saved" as const;
+      }
       try {
         setCorpusAnalysis(await saveSpeechCorpusSession(updated));
         return "saved" as const;
@@ -1618,14 +1629,104 @@ export function App() {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
           author: request.author,
-          // Outside blind review the analysis is on screen next to the workbench.
-          basedOnRunId: request.blind ? null : latest.analysis.id,
+          // Outside blind review the analysis is on screen next to the workbench; a review copy
+          // has no analysis to show.
+          basedOnRunId: request.blind || latest.reviewCopy ? null : latest.analysis.id,
           events: request.events,
           status: request.status,
           supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
           ...(request.adjudicates ? { adjudicates: request.adjudicates } : {}),
         }),
       request.adjudicates ? "adjudication" : "annotation",
+    );
+  }
+
+  // Adds a rater's annotation file: merged into the session it describes, or kept as a review
+  // copy when this device does not have that session. Nothing local is changed or removed.
+  async function importAnnotationFile(file: File) {
+    if (restorePendingRef.current > 0) {
+      setMessage("Wait for the session restore to finish before importing annotations");
+      return;
+    }
+    let exchange: AnnotationExchange;
+    let audio: KeptSessionAudio | null = null;
+    try {
+      exchange = parseAnnotationExchange(JSON.parse(await file.text()));
+      if (exchange.audio) {
+        const samples = decodeSamples(exchange.audio.samples);
+        if (audioFingerprint(samples, exchange.audio.sampleRate) !== exchange.audio.audioId) {
+          throw new Error("the file's audio does not match its fingerprint");
+        }
+        const { samples: _encoded, ...placement } = exchange.audio;
+        audio = {
+          ...placement,
+          samples,
+          sessionId: exchange.session.id,
+          keptAt: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      setMessage(`Import failed: ${errorMessage(error)}`);
+      return;
+    }
+    const outcome = await serializeSessionMutation(async () => {
+      const existing = sessionsRef.current.find((session) => session.id === exchange.session.id);
+      let result: ReturnType<typeof mergeAnnotationExchange>;
+      try {
+        result = mergeAnnotationExchange(
+          existing ??
+            reviewCopyFromExchange(exchange, {
+              importedAt: new Date(),
+              emptyReport: emptyReport(),
+            }),
+          exchange,
+        );
+      } catch (error) {
+        return { failed: errorMessage(error) };
+      }
+      try {
+        persistSessions(
+          existing
+            ? sessionsRef.current.map((session) =>
+                session.id === result.record.id ? result.record : session,
+              )
+            : [result.record, ...sessionsRef.current],
+        );
+      } catch {
+        return { failed: "browser storage is full or unavailable" };
+      }
+      if (viewedSessionRef.current?.id === result.record.id) {
+        loadedSessionRef.current = result.record;
+        setViewedSession(result.record);
+      }
+      let audioNote = "";
+      if (audio) {
+        try {
+          const kept = await getSessionAudio(result.record.id);
+          if (!kept) {
+            await putSessionAudio(audio);
+            if (viewedSessionRef.current?.id === result.record.id) setViewedAudio(audio);
+            audioNote = "; its audio is kept on this device for review";
+          } else if (kept.audioId !== audio.audioId) {
+            audioNote = "; its audio differs from the audio kept here, which was left unchanged";
+          }
+        } catch (error) {
+          audioNote = `; its audio could not be kept (${errorMessage(error)})`;
+        }
+      }
+      if (existing && !existing.reviewCopy) {
+        try {
+          setCorpusAnalysis(await saveSpeechCorpusSession(result.record));
+        } catch {
+          setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
+        }
+      }
+      return { ...result, created: !existing, audioNote };
+    });
+    setMessage(
+      "failed" in outcome
+        ? `Import failed: ${outcome.failed}`
+        : `${outcome.created ? "Added a review copy with" : "Imported"} ${outcome.added} new annotation revision${outcome.added === 1 ? "" : "s"}${outcome.alreadyPresent ? ` (${outcome.alreadyPresent} already here)` : ""}${outcome.audioNote}`,
     );
   }
 
@@ -2067,7 +2168,14 @@ export function App() {
         const remainingSessions = sessionsRef.current.filter(
           (candidate) => candidate.id !== session.id,
         );
-        const analysis = await deleteSpeechCorpusSession(session.id, remainingSessions);
+        // A review copy was never in the desktop corpus; its figures stay as they are.
+        const analysis = session.reviewCopy
+          ? isDesktopApp()
+            ? await loadSpeechCorpus(ownSessions(remainingSessions)).catch(() =>
+                analyzeLocalCorpus(remainingSessions),
+              )
+            : analyzeLocalCorpus(remainingSessions)
+          : await deleteSpeechCorpusSession(session.id, remainingSessions);
         const next = sessionsRef.current.filter((candidate) => candidate.id !== session.id);
         persistSessions(next);
         if (activeSessionIdRef.current === session.id) {
@@ -2131,7 +2239,7 @@ export function App() {
     // holds a restore that could still fail; a native failure therefore changes nothing.
     if (isDesktopApp()) {
       try {
-        await invoke("replace_speech_corpus_sessions", { sessions: restored });
+        await invoke("replace_speech_corpus_sessions", { sessions: ownSessions(restored) });
       } catch (error) {
         throw new Error(`the desktop corpus could not be replaced: ${errorMessage(error)}`);
       }
@@ -2143,7 +2251,9 @@ export function App() {
       // this window's sessions, which it mirrored before the restore.
       if (isDesktopApp()) {
         try {
-          await invoke("replace_speech_corpus_sessions", { sessions: sessionsRef.current });
+          await invoke("replace_speech_corpus_sessions", {
+            sessions: ownSessions(sessionsRef.current),
+          });
         } catch (rollbackError) {
           throw new Error(
             `browser storage refused the restore (${errorMessage(error)}) and the desktop corpus could not be put back (${errorMessage(rollbackError)}); it now holds the backup's sessions, so restore the same backup again once storage has room`,
@@ -2621,7 +2731,12 @@ export function App() {
         onDeclare={declareSessionValidation}
         onAdjudicate={setAdjudicatingId}
       />
-      <EvidenceExportPanel sessions={sessions} />
+      <AnnotationExchangePanel
+        session={viewedSession}
+        audio={viewedAudio?.sessionId === viewedSession?.id ? viewedAudio : null}
+        onImport={importAnnotationFile}
+      />
+      <EvidenceExportPanel sessions={ownSessions(sessions)} />
       {exportDialogOpen && (
         <ExportBackupDialog onClose={() => setExportDialogOpen(false)} onDownload={exportJson} />
       )}
@@ -2938,7 +3053,15 @@ async function loadSpeechCorpusExport(sessions: SavedSession[]) {
   }
 }
 
+/** Sessions of this user's own speech: every saved session except review copies. */
+function ownSessions(sessions: SavedSession[]) {
+  return sessions.filter((session) => !session.reviewCopy);
+}
+
 async function saveSpeechCorpusSession(session: SavedSession): Promise<SpeechCorpusAnalysis> {
+  if (session.reviewCopy) {
+    throw new Error("review copies are not part of the speech corpus");
+  }
   if (!isDesktopApp()) {
     throw new Error("desktop corpus is only available in the Tauri app");
   }
@@ -3379,7 +3502,7 @@ function emptyCorpusAnalysis(): SpeechCorpusAnalysis {
 
 function localSpeechCorpusExport(sessions: SavedSession[]) {
   return {
-    sessions: sessions.map((session) => ({
+    sessions: ownSessions(sessions).map((session) => ({
       id: session.id,
       startedAt: session.startedAt,
       segments: session.segments.filter((segment) => segment.isFinal && segment.text.trim()),
@@ -3393,7 +3516,9 @@ function localSpeechCorpusExport(sessions: SavedSession[]) {
   };
 }
 
-function analyzeLocalCorpus(sessions: SavedSession[]): SpeechCorpusAnalysis {
+function analyzeLocalCorpus(allSessions: SavedSession[]): SpeechCorpusAnalysis {
+  // Review copies hold someone else's speech; they are not part of this user's corpus.
+  const sessions = ownSessions(allSessions);
   const corpus = emptyCorpusAnalysis();
   const terms = new Map<string, { count: number; documents: Set<string> }>();
   const speakerTerms = new Map<string, Map<string, number>>();
