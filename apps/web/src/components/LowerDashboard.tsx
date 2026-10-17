@@ -10,11 +10,15 @@ import {
 } from "lucide-react";
 import { isReplayable } from "@stutter-tracker/shared";
 import { isScoreWithheld } from "../audio/captureQuality";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
   buildSessionHistory,
   progressComparability,
   type SessionHistoryPoint,
+  cohortKey,
+  type HistoryCohort,
+  historyCohorts,
+  languageBreakdown,
 } from "../storage/sessionHistory";
 import type {
   AnalysisReport,
@@ -31,7 +35,14 @@ import {
   formatTime,
   kindLabel,
 } from "../utils/formatting";
-import { buttonClass, cx, mutedTextClass, panelClass, panelHeaderClass } from "./styles";
+import {
+  buttonClass,
+  controlClass,
+  cx,
+  mutedTextClass,
+  panelClass,
+  panelHeaderClass,
+} from "./styles";
 
 type LowerDashboardProps = {
   report: AnalysisReport;
@@ -291,8 +302,14 @@ function ChunkAnalysisPanel({
 
 function ProgressPanel({ sessions }: { sessions: SavedSession[] }) {
   // Sessions whose capture failed the quality gate have no score to trend.
-  const scored = sessions.filter((session) => !isScoreWithheld(session.report));
-  const withheldCount = sessions.length - scored.length;
+  const allScored = sessions.filter((session) => !isScoreWithheld(session.report));
+  const withheldCount = sessions.length - allScored.length;
+  const cohorts = historyCohorts(allScored);
+  const [cohort, setCohort] = useState("all");
+  const selected = cohorts.some((candidate) => candidate.key === cohort) ? cohort : "all";
+  const scored =
+    selected === "all" ? allScored : allScored.filter((session) => cohortKey(session) === selected);
+  const languages = selected === "all" ? languageBreakdown(scored) : [];
   const history = buildSessionHistory(scored);
   const comparability = progressComparability(history);
 
@@ -304,6 +321,30 @@ function ProgressPanel({ sessions }: { sessions: SavedSession[] }) {
           <p className={`m-0 mt-1 text-sm ${mutedTextClass}`}>
             Last {history.length || "saved"} sessions · oldest to newest
           </p>
+          {cohorts.length > 1 && (
+            <label className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              Sessions
+              <select
+                className={controlClass}
+                value={selected}
+                onChange={(change) => setCohort(change.target.value)}
+              >
+                <option value="all">All sessions (mixed contexts)</option>
+                {cohorts.map((candidate) => (
+                  <option key={candidate.key} value={candidate.key}>
+                    {cohortLabel(candidate)} ({candidate.count})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {languages.length > 1 && (
+            <p className={`m-0 mt-1 text-sm ${mutedTextClass}`}>
+              Languages: {languages.map(([language, count]) => `${language} ${count}`).join(", ")}.
+              Shown together, these are not one trajectory; choose a group to compare like with
+              like.
+            </p>
+          )}
           {withheldCount > 0 && (
             <p className={`m-0 mt-1 text-sm ${mutedTextClass}`}>
               {withheldCount} session{withheldCount === 1 ? "" : "s"} with unknown capture quality
@@ -371,6 +412,31 @@ function ProgressPanel({ sessions }: { sessions: SavedSession[] }) {
       </div>
     </div>
   );
+}
+
+const TASK_LABELS: Record<string, string> = {
+  reading: "reading",
+  monologue: "monologue",
+  conversation: "conversation",
+  phoneCall: "phone-like call",
+  presentation: "presentation",
+  other: "other task",
+};
+
+function cohortLabel(cohort: HistoryCohort) {
+  const [kind, trained] = cohort.task.split(":");
+  const task =
+    cohort.task === "unknown"
+      ? "task not recorded"
+      : `${TASK_LABELS[kind] ?? kind}${trained === "trained" ? " (practised)" : ""}`;
+  const condition =
+    cohort.condition === "unknown"
+      ? "condition not recorded"
+      : cohort.condition === "unassisted"
+        ? "unassisted"
+        : `assisted (${cohort.condition.split(":")[1]})`;
+  const language = cohort.spokenLanguage === "unknown" ? "language unknown" : cohort.spokenLanguage;
+  return `${language} · ${task} · ${condition}`;
 }
 
 function TrendMetric({

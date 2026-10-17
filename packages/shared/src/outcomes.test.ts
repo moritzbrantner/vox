@@ -297,3 +297,17 @@ describe("spoken language", () => {
     );
   });
 });
+
+describe("language capability matrix", () => {
+  test("nothing language-specific is marked evaluated yet, and unknown languages get no analysis", async () => {
+    const { LANGUAGE_CAPABILITIES, languageCapabilities } = await import("./outcomes");
+    for (const capabilities of Object.values(LANGUAGE_CAPABILITIES)) {
+      expect(capabilities.recordingAndReview).toBe("available");
+      expect(capabilities.eventDetection).toBe("notEvaluated");
+      expect(capabilities.reviewedPractice).toBe("notAvailable");
+    }
+    expect(languageCapabilities("en-GB")).toBe(LANGUAGE_CAPABILITIES.en);
+    expect(languageCapabilities("fr").eventDetection).toBe("notAvailable");
+    expect(languageCapabilities("unknown").note).toContain("not recorded");
+  });
+});

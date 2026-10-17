@@ -1,7 +1,13 @@
 import { migrateSessionRecord, reanalyzeSession } from "@stutter-tracker/shared";
 import { describe, expect, it } from "vitest";
 import type { AnalysisReport, SavedSession } from "../types";
-import { buildSessionHistory, progressComparability } from "./sessionHistory";
+import {
+  buildSessionHistory,
+  cohortKey,
+  historyCohorts,
+  languageBreakdown,
+  progressComparability,
+} from "./sessionHistory";
 
 describe("buildSessionHistory", () => {
   it("returns the newest requested sessions in chronological order", () => {
@@ -208,3 +214,44 @@ function savedSession(
     },
   });
 }
+
+describe("history cohorts", () => {
+  const tagged = (
+    id: string,
+    language: string,
+    task: SavedSession["context"]["task"],
+    condition: SavedSession["context"]["condition"],
+  ) => {
+    const session = savedSession(id, "2026-09-08T12:00:00.000Z", 90, 2, 120);
+    return { ...session, context: { spokenLanguage: language, task, condition } };
+  };
+  const reading = { kind: "reading" as const, trained: false };
+
+  it("groups sessions by language, task and condition, largest group first", () => {
+    const sessions = [
+      tagged("a", "en", reading, { kind: "unassisted" }),
+      tagged("b", "en-US", reading, { kind: "unassisted" }),
+      tagged("c", "de", reading, { kind: "unassisted" }),
+      tagged("d", "en", reading, { kind: "assisted", aidId: "daf", settings: { delayMs: 80 } }),
+      tagged("e", "en", null, null),
+    ];
+    const cohorts = historyCohorts(sessions);
+    expect(cohorts[0]).toEqual({
+      key: "en|reading:untrained|unassisted",
+      spokenLanguage: "en",
+      task: "reading:untrained",
+      condition: "unassisted",
+      count: 2,
+    });
+    expect(cohorts).toHaveLength(4);
+    expect(cohortKey(sessions[3])).toBe('en|reading:untrained|assisted:daf:[["delayMs",80]]');
+    expect(languageBreakdown(sessions)).toEqual([
+      ["en", 4],
+      ["de", 1],
+    ]);
+    // One cohort is comparable on context.
+    const cohort = sessions.filter((session) => cohortKey(session) === cohorts[0].key);
+    expect(progressComparability(buildSessionHistory(cohort)).contextDiffers).toBe(false);
+    expect(progressComparability(buildSessionHistory(sessions)).contextDiffers).toBe(true);
+  });
+});

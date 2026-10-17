@@ -125,4 +125,27 @@ describe("matched session comparison (vox#28)", () => {
     ).toBeInTheDocument();
     expect(within(result).getByText(/not evidence of treatment effect/)).toBeInTheDocument();
   });
+
+  it("filters progress to one language, task and condition and keeps the language breakdown otherwise", async () => {
+    const reading = { kind: "reading" as const, trained: false };
+    const tag = (item: SavedSession, spokenLanguage: string): SavedSession => ({
+      ...item,
+      context: { spokenLanguage, task: reading, condition: { kind: "unassisted" } },
+    });
+    localStorage.setItem(
+      STORE_KEY,
+      JSON.stringify([tag(EARLIER, "en"), tag(LATER, "en"), tag({ ...LEGACY, id: "s-de" }, "de")]),
+    );
+    renderApp();
+    const group = await screen.findByLabelText("Sessions");
+    expect(screen.getByText(/Languages: en 2, de 1\./)).toBeInTheDocument();
+    expect(screen.getByText(/they span 2 different languages/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(group, "en|reading:untrained|unassisted");
+    expect(screen.queryByText(/Languages: en 2/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/different languages/)).not.toBeInTheDocument();
+    expect(
+      within(group).getByRole("option", { name: "en · reading · unassisted (2)" }),
+    ).toBeInTheDocument();
+  });
 });

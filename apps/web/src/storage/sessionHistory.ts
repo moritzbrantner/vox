@@ -125,6 +125,51 @@ export function buildSessionHistory(sessions: SavedSession[], limit = 12): Sessi
     .map(({ session }) => toHistoryPoint(session));
 }
 
+export type HistoryCohort = {
+  /** Language, task and assistance condition, as the comparability check splits them. */
+  key: string;
+  spokenLanguage: string;
+  task: string;
+  condition: string;
+  count: number;
+};
+
+/** Sessions with the same language, task and condition: the groups a trend may compare. */
+export function cohortKey(session: SavedSession) {
+  const point = toHistoryPoint(session);
+  return `${point.spokenLanguage}|${point.task}|${point.condition}`;
+}
+
+/** Cohorts present in `sessions`, largest first. */
+export function historyCohorts(sessions: SavedSession[]): HistoryCohort[] {
+  const cohorts = new Map<string, HistoryCohort>();
+  for (const session of sessions) {
+    const point = toHistoryPoint(session);
+    const key = cohortKey(session);
+    const cohort = cohorts.get(key);
+    if (cohort) cohort.count += 1;
+    else
+      cohorts.set(key, {
+        key,
+        spokenLanguage: point.spokenLanguage,
+        task: point.task,
+        condition: point.condition,
+        count: 1,
+      });
+  }
+  return [...cohorts.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
+/** Sessions per spoken language, so a mixed view keeps its language breakdown. */
+export function languageBreakdown(sessions: SavedSession[]) {
+  const counts = new Map<string, number>();
+  for (const session of sessions) {
+    const language = canonicalSpokenLanguage(session.context.spokenLanguage);
+    counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
 function toHistoryPoint(session: SavedSession): SessionHistoryPoint {
   const durationSeconds = nonNegativeNumber(session.report.totalDurationSeconds);
   const stutterCount = nonNegativeNumber(session.report.stutterCount);
