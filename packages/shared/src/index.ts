@@ -1149,5 +1149,6 @@ export * from "./outcomes";
 export * from "./sessions";
 export * from "./annotations";
 export * from "./validation";
+export * from "./annotationExchange";
 export * from "./consent";
 export * from "./evidenceExport";
