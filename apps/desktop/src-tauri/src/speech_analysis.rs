@@ -315,7 +315,8 @@ struct AcousticAnalysis {
 }
 
 /// Batch reference analysis. Its transcript repetition stage is the oracle that the typed
-/// evidence path in `speech_pipeline` reproduces.
+/// evidence path in `speech_pipeline` reproduces; production and the benchmark use the pipeline.
+#[cfg(test)]
 pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<AnalysisReport> {
     analyze_with_repetitions(request, |_, tokens| detect_repetitions(tokens))
 }
@@ -1177,6 +1178,7 @@ pub(crate) fn timed_tokens(segment: &TranscriptSegmentInput) -> Vec<TimedToken> 
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
     let mut events = Vec::new();
     let mut index = 0;

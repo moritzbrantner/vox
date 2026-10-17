@@ -30,6 +30,8 @@ pub enum TimingSource {
 /// Why a channel has no observations. A missing channel is never evidence of absence.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+// The shared "No" prefix is the wire meaning: each variant names what is absent.
+#[allow(clippy::enum_variant_names)]
 pub enum MissingReason {
     NoAudio,
     NoFinalTranscript,

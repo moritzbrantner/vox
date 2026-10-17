@@ -598,7 +598,7 @@ fn aggregate_stats(
     let minutes = (scored_seconds / 60.0).max(1.0 / 60.0);
     let speakers = documents
         .iter()
-        .map(|document| speaker_key(document))
+        .map(speaker_key)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
 
