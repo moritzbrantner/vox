@@ -1,6 +1,6 @@
 import { migrateSessionRecord } from "@stutter-tracker/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -127,6 +127,13 @@ describe("blind review (vox#23)", () => {
       events: [{ kind: "noSpeech", startSeconds: 0, endSeconds: 2 }],
     });
 
+    // The saved span label survives a reload (it is not quarantined as unreadable).
+    const before = stored();
+    cleanup();
+    renderApp();
+    await waitFor(() => expect(document.querySelectorAll(".session-row")).toHaveLength(2));
+    expect(stored()).toEqual(before);
+    await userEvent.click(await screen.findByRole("button", { name: "Start blind review" }));
     await userEvent.click(screen.getByRole("button", { name: "End blind review" }));
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Blind review" })).not.toBeInTheDocument(),
