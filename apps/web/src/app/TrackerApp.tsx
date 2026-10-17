@@ -19,6 +19,8 @@ import {
   type AnnotationExchange,
   decodeSamples,
   declareValidation,
+  readableTranscript,
+  verbatimTranscript,
   tagSessionContext,
   mergeAnnotationExchange,
   parseAnnotationExchange,
@@ -293,6 +295,7 @@ export function App() {
   const speakerMatchInFlightRef = useRef(false);
   const transcriptionRef = useRef(transcription);
   const recordingTranscriptionRef = useRef<TranscriptionSettings | null>(null);
+  // Bound when a recording starts; a later selection never redirects that run's transcription.
   const recordingLanguageRef = useRef(language);
   // Language of the session in the workspace, fixed when recording starts or a session loads; the
   // selector can change before Save without relabelling the finished recording.
@@ -440,7 +443,8 @@ export function App() {
     isFinishingCapture ||
     isTranscribing ||
     chunkProgress.queued + chunkProgress.processing > 0;
-  const transcript = useMemo(() => segments.map((segment) => segment.text).join(" "), [segments]);
+  const transcript = useMemo(() => verbatimTranscript(segments), [segments]);
+  const readable = useMemo(() => readableTranscript(segments), [segments]);
   const speechStats = normalizedSpeechStats(report);
   const blockerStats = normalizedBlockerStats(report);
   const analyzedChunks = report.chunks ?? [];
@@ -710,10 +714,6 @@ export function App() {
   useEffect(() => {
     transcriptionRef.current = transcription;
   }, [transcription]);
-
-  useEffect(() => {
-    recordingLanguageRef.current = language;
-  }, [language]);
 
   useEffect(() => {
     // A late result must not replace a saved session's stored analysis.
@@ -2641,6 +2641,7 @@ export function App() {
           hasAnalysisEvents={report.events.length > 0}
           level={level}
           transcript={transcript}
+          readableTranscript={readable}
           interimText={interimText}
           canEnroll={samplesRef.current.length > 0}
           onEnroll={saveSpeakerProfile}
