@@ -13,7 +13,7 @@ function sessionsLabel(count: number) {
 /** Restore replaces every saved session with the backup (owner decision, vox#86 (a)). */
 export function restoreConfirmation(currentCount: number, backupCount: number) {
   const current = `${currentCount} current saved ${currentCount === 1 ? "session" : "sessions"}`;
-  return `Replace all ${current} with ${sessionsLabel(backupCount)} from this backup? The ${current.replace(" saved", "")} will be lost.`;
+  return `Replace all ${current} with ${sessionsLabel(backupCount)} from this backup? The ${current.replace(" saved", "")} will be lost, and so will any audio kept for review: backups do not contain audio.`;
 }
 
 export function SessionRestoreButton({

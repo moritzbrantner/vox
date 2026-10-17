@@ -54,7 +54,7 @@ type LowerDashboardProps = {
 /** What deleting a saved session removes, and what it cannot reach (vox#87). */
 export const SESSION_DELETE_CONFIRMATION = [
   "Delete this saved session? This cannot be undone.",
-  "This removes its transcript, annotations, analyses and any unsaved recording copy from this app. In the desktop app it also removes the session from the speech corpus; the browser version cannot reach desktop data.",
+  "This removes its transcript, annotations, analyses, any audio kept for review and any unsaved recording copy from this app. In the desktop app it also removes the session from the speech corpus; the browser version cannot reach desktop data.",
   "Session backups and copies you already exported or shared are not changed. Speaker voiceprints are kept; remove them separately.",
 ].join("\n\n");
 export function LowerDashboard({

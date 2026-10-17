@@ -14,9 +14,11 @@ import {
   type StutterKind,
   undoAnnotation,
 } from "@stutter-tracker/shared";
-import { Redo2, Trash2, Undo2 } from "lucide-react";
+import { Play, Redo2, Trash2, Undo2 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { KeptSessionAudio } from "../storage/sessionAudio";
 import type { SavedSession } from "../types";
+import { ReviewAudioPanel, useReviewAudio } from "./ReviewAudio";
 import {
   buttonClass,
   controlClass,
@@ -55,10 +57,13 @@ const COARSE_NUDGE_SECONDS = 0.1;
  */
 export function AnnotationWorkbench({
   session,
+  audio,
   disabled,
   onSave,
 }: {
   session: SavedSession;
+  /** Audio the user kept with this session; null when none was kept. */
+  audio: KeptSessionAudio | null;
   disabled: boolean;
   onSave: (request: AnnotationSaveRequest) => Promise<boolean>;
 }) {
@@ -72,6 +77,7 @@ export function AnnotationWorkbench({
   const [editor, setEditor] = useState(() => createAnnotationEditor(baseline?.events));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const review = useReviewAudio(audio);
   const [draft, setDraft] = useState<AnnotatedEvent>({
     kind: "block",
     startSeconds: Number.NaN,
@@ -177,6 +183,25 @@ export function AnnotationWorkbench({
         </div>
       </div>
 
+      {audio ? (
+        <ReviewAudioPanel
+          audio={audio}
+          review={review}
+          events={editor.events}
+          onPick={(edge, seconds) =>
+            setDraft((current) =>
+              edge === "start"
+                ? { ...current, startSeconds: roundAnnotationSeconds(seconds) }
+                : { ...current, endSeconds: roundAnnotationSeconds(seconds) },
+            )
+          }
+        />
+      ) : (
+        <p className={cx("m-0 mb-3 text-sm", mutedTextClass)}>
+          No audio was kept with this session, so it can only be annotated against the transcript.
+        </p>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <h3 className="m-0 mb-2 text-base">Transcript</h3>
@@ -259,6 +284,17 @@ export function AnnotationWorkbench({
                     apply({ type: "nudge", index, edge, deltaSeconds })
                   }
                 />
+                {audio && (
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    aria-label={`Play event ${index + 1}`}
+                    disabled={!review.available}
+                    onClick={() => review.play(event)}
+                  >
+                    <Play size={16} aria-hidden="true" />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={buttonClass}
