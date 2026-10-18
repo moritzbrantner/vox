@@ -33,7 +33,7 @@ hound = "3.5"
 media-core = { package = "moenarch-media-core", version = "=0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 tauri = { version = "2", features = [] }
 # Historical text-analysis package surfaces now map to their extracted owners.
 text-analysis-core = { package = "moenarch-text-core", version = "=0.1.1" }
