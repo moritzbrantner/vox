@@ -63,7 +63,7 @@
       "name": "@stutter-tracker/web",
       "version": "0.1.0",
       "dependencies": {
-        "@moritzbrantner/audio-analysis-core-wasm": "github:moritzbrantner/audio-analysis-core-wasm#89c881bb7feff244f78683473580935678c0bf4e",
+        "@moritzbrantner/audio-analysis-core-wasm": "github:moritzbrantner/audio-analysis-core-wasm#c569fad267ca574be7fe225343731e862c6d4f21",
         "@stutter-tracker/compute-client": "workspace:*",
         "@stutter-tracker/shared": "workspace:*",
         "@tailwindcss/vite": "^4.3.0",
@@ -461,7 +461,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "3.1.2", "@jridgewell/sourcemap-codec": "1.5.5" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@moritzbrantner/audio-analysis-core-wasm": ["@moritzbrantner/audio-analysis-core-wasm@github:moritzbrantner/audio-analysis-core-wasm#89c881b", {}, "moritzbrantner-audio-analysis-core-wasm-89c881b", "sha512-AXaEAPV2cmT/Sn7MmfsU7B/0GY4tSjnW9NTRXcjR85agqgqH+HrGEvjKyq7thdx3HDlZtbkcUSjFIJka7W7FGA=="],
+    "@moritzbrantner/audio-analysis-core-wasm": ["@moritzbrantner/audio-analysis-core-wasm@github:moritzbrantner/audio-analysis-core-wasm#c569fad", {}, "moritzbrantner-audio-analysis-core-wasm-c569fad", "sha512-K6g6CdQXyQuZKRHNkKIgOMjEgsh2AF5QDKWPp0PJVtKSund7Am7OhvhQFtjYDqqyEM74EgvFq/I5ntX3Xzx8Tw=="],
 
     "@oxfmt/binding-android-arm-eabi": ["@oxfmt/binding-android-arm-eabi@0.51.0", "", { "os": "android", "cpu": "arm" }, "sha512-Ni0sCqg5CIHaLIYFGj+ncbcumylvNC6FE4rfD0KfdmnWHbPJ+zev0qZCXKxy2hFVa0fYRK0yPzf5nzPbkZou7g=="],
 
