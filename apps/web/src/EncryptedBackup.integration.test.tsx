@@ -171,7 +171,7 @@ function fromBase64(value: string) {
 
 async function deriveKey(
   passphrase: string,
-  salt: Uint8Array,
+  salt: Uint8Array<ArrayBuffer>,
   iterations: number,
   usage: "encrypt" | "decrypt",
 ) {
