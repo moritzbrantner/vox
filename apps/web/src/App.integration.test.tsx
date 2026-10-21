@@ -2159,14 +2159,16 @@ describe("interrupted capture recovery", () => {
     const { container } = renderApp();
     const notice = await screen.findByRole("region", { name: "Interrupted recording" });
     const setItem = Storage.prototype.setItem;
-    const checkpointWrites = vi
-      .spyOn(Storage.prototype, "setItem")
-      .mockImplementation(function (this: Storage, key, value) {
-        if (key === CHECKPOINT_KEY) {
-          throw new DOMException("full", "QuotaExceededError");
-        }
-        return setItem.call(this, key, value);
-      });
+    const checkpointWrites = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (key === CHECKPOINT_KEY) {
+        throw new DOMException("full", "QuotaExceededError");
+      }
+      return setItem.call(this, key, value);
+    });
 
     await user.click(within(notice).getByRole("button", { name: "Recover recording" }));
 

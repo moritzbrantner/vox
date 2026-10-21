@@ -23,10 +23,10 @@
     "expo-audio": "~55.0.14",
     "expo-file-system": "~55.0.21",
     "react": "^19.2.0",
-    "react-native": "^0.83.1"
+    "react-native": "^0.88.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",
-    "typescript": "5.8.3"
+    "typescript": "5.9.3"
   }
 }
