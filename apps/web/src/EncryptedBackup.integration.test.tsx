@@ -349,14 +349,14 @@ function captureDownloads() {
     writable: true,
     value: vi.fn(),
   });
-  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-    function (this: HTMLAnchorElement) {
-      const blob = urls.get(this.href);
-      if (blob) {
-        downloads.push({ blob, filename: this.download });
-      }
-    },
-  );
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    const blob = urls.get(this.href);
+    if (blob) {
+      downloads.push({ blob, filename: this.download });
+    }
+  });
 }
 
 function restoreDownloadGlobals() {
