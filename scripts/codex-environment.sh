@@ -63,8 +63,8 @@ if [[ -n "$desired_bun" ]]; then
     exit 2
   fi
   if [[ "$(bun --version)" != "$desired_bun" ]]; then
-    printf 'Bun preflight mismatch: expected %s, got %s\n' "$desired_bun" "$(bun --version)" >&2
-    exit 1
+    # Bun tracks latest (owner decision 2026-10-21); packageManager is informational.
+    printf 'Bun differs from packageManager (declared %s, observed %s); continuing\n' "$desired_bun" "$(bun --version)" >&2
   fi
   if [[ -d "$HOME/.bun/bin" ]]; then
     export PATH="$HOME/.bun/bin:$PATH"
@@ -144,8 +144,8 @@ for command in "${environment_commands[@]}"; do
 done
 
 if [[ -n "$desired_bun" && "$(bun --version)" != "$desired_bun" ]]; then
-  printf 'Bun preflight mismatch: expected %s, got %s\n' "$desired_bun" "$(bun --version)" >&2
-  exit 1
+  # Bun tracks latest (owner decision 2026-10-21); packageManager is informational.
+  printf 'Bun differs from packageManager (declared %s, observed %s); continuing\n' "$desired_bun" "$(bun --version)" >&2
 fi
 if [[ -n "$desired_node" ]]; then
   observed_node="$(node --version)"
