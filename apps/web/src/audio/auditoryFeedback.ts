@@ -1,3 +1,6 @@
+import type { RecordingDescriptor } from "@stutter-tracker/shared";
+import { describeCapture, REQUESTED_PREPROCESSING } from "./browserRecorder";
+
 export type AuditoryFeedbackSettings = {
   delayMs: number;
   pitchShiftSemitones: number;
@@ -5,9 +8,19 @@ export type AuditoryFeedbackSettings = {
   outputGain: number;
 };
 
+/** One lab capture with its provenance: which stream it is and what processing it carries. */
+export type LabCapture = {
+  blob: Blob;
+  descriptor: RecordingDescriptor;
+};
+
+/**
+ * `raw` is the microphone stream the app received (role "appInput"); `processed` is the
+ * delayed/pitch-shifted monitor mix (role "interventionOutput"), which assessment never scores.
+ */
 export type AuditoryFeedbackRecording = {
-  raw: Blob | null;
-  processed: Blob | null;
+  raw: LabCapture | null;
+  processed: LabCapture | null;
 };
 
 export type AuditoryFeedbackCapabilities = {
@@ -212,6 +225,7 @@ export async function startAuditoryFeedbackSession(
 
   const rawCapture = startRecorderCapture(createRecorderCapture(stream));
   const processedCapture = startRecorderCapture(createRecorderCapture(captureDestination.stream));
+  const descriptors = labDescriptors(stream, context.sampleRate);
 
   let stopped = false;
   let stopPromise: Promise<AuditoryFeedbackRecording> | null = null;
@@ -266,7 +280,10 @@ export async function startAuditoryFeedbackSession(
           stopRecorderCapture(rawCapture, finalizeTimeoutMs),
           stopRecorderCapture(processedCapture, finalizeTimeoutMs),
         ]);
-        return { raw, processed };
+        return {
+          raw: raw && { blob: raw, descriptor: descriptors.raw },
+          processed: processed && { blob: processed, descriptor: descriptors.processed },
+        };
       } finally {
         await teardown();
       }
@@ -367,12 +384,7 @@ function stopRecorderCapture(
 // that is granted later is released at once.
 function acquireMicrophone(signal?: AbortSignal): Promise<MediaStream> {
   const request = navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: false,
-    },
+    audio: { channelCount: 1, ...REQUESTED_PREPROCESSING },
   });
   if (!signal) {
     return request;
@@ -402,6 +414,40 @@ function acquireMicrophone(signal?: AbortSignal): Promise<MediaStream> {
       },
     );
   });
+}
+
+/**
+ * Descriptors of one trial's two captures, which both start on the trial clock. The processed
+ * capture is the app's own monitor output, so it is never described as speaker input.
+ */
+function labDescriptors(stream: MediaStream, contextSampleRate: number) {
+  const track = stream.getTracks()[0];
+  const reported = track?.getSettings?.().sampleRate;
+  const trialId = crypto.randomUUID();
+  const base = {
+    sessionId: trialId,
+    runId: trialId,
+    origin: "browser",
+    startOffsetSeconds: 0,
+    speakerAssessment: "unknown",
+  } as const;
+  const raw: RecordingDescriptor = {
+    ...base,
+    ...describeCapture(track),
+    role: "appInput",
+    sampleRate: typeof reported === "number" && reported > 0 ? reported : contextSampleRate,
+    discontinuities: [],
+  };
+  const processed: RecordingDescriptor = {
+    ...base,
+    role: "interventionOutput",
+    sampleRate: contextSampleRate,
+    channelCount: 1,
+    // The monitor mix carries the input's preprocessing plus the app's delay, pitch and limiter.
+    preprocessing: raw.preprocessing,
+    discontinuities: [],
+  };
+  return { raw, processed };
 }
 
 function preferredRecordingMimeType() {

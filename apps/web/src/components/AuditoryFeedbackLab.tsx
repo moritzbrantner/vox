@@ -1,9 +1,11 @@
+import type { CaptureStreamRole } from "@stutter-tracker/shared";
 import { Headphones, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   DEFAULT_AUDITORY_FEEDBACK_SETTINGS,
   type AuditoryFeedbackSession,
   type AuditoryFeedbackSettings,
+  type LabCapture,
   startAuditoryFeedbackSession,
 } from "../audio/auditoryFeedback";
 import {
@@ -17,10 +19,28 @@ import {
 } from "../audio/feedbackControls";
 import { loadFeedbackSettings, saveFeedbackSettings } from "../storage/feedbackSettings";
 
+/** A replayable capture keeps the stream role from its recording descriptor. */
+type ReplayCapture = { url: string; role: CaptureStreamRole };
+
 type RecordingUrls = {
-  raw: string | null;
-  processed: string | null;
+  raw: ReplayCapture | null;
+  processed: ReplayCapture | null;
 };
+
+const REPLAY_TEXT: Record<CaptureStreamRole, { title: string; description: string }> = {
+  appInput: {
+    title: "Untouched microphone",
+    description: "What the microphone captured before the feedback processing graph.",
+  },
+  interventionOutput: {
+    title: "Monitored feedback",
+    description: "The dry/altered mix after delay, pitch processing, limiter, and monitor gain.",
+  },
+};
+
+function replayCapture(capture: LabCapture | null): ReplayCapture | null {
+  return capture ? { url: URL.createObjectURL(capture.blob), role: capture.descriptor.role } : null;
+}
 
 type PitchSupport = "unknown" | "supported" | "unsupported";
 
@@ -149,8 +169,8 @@ export function AuditoryFeedbackLab() {
         return;
       }
       const nextUrls = {
-        raw: recording.raw ? URL.createObjectURL(recording.raw) : null,
-        processed: recording.processed ? URL.createObjectURL(recording.processed) : null,
+        raw: replayCapture(recording.raw),
+        processed: replayCapture(recording.processed),
       };
       setRecordingUrls((current) => {
         releaseRecordingUrls(current);
@@ -406,19 +426,15 @@ export function AuditoryFeedbackLab() {
 
         {(recordingUrls.raw || recordingUrls.processed) && (
           <div className="mt-6 grid grid-cols-2 gap-4 border-t border-[#e5ebe7] pt-5 max-md:grid-cols-1">
-            {recordingUrls.raw && (
-              <ComparisonRecording
-                title="Untouched microphone"
-                description="What the microphone captured before the feedback processing graph."
-                url={recordingUrls.raw}
-              />
-            )}
-            {recordingUrls.processed && (
-              <ComparisonRecording
-                title="Monitored feedback"
-                description="The dry/altered mix after delay, pitch processing, limiter, and monitor gain."
-                url={recordingUrls.processed}
-              />
+            {[recordingUrls.raw, recordingUrls.processed].map(
+              (capture) =>
+                capture && (
+                  <ComparisonRecording
+                    key={capture.role}
+                    {...REPLAY_TEXT[capture.role]}
+                    url={capture.url}
+                  />
+                ),
             )}
           </div>
         )}
@@ -474,11 +490,10 @@ function ComparisonRecording({
 }
 
 function releaseRecordingUrls(urls: RecordingUrls) {
-  if (urls.raw) {
-    URL.revokeObjectURL(urls.raw);
-  }
-  if (urls.processed) {
-    URL.revokeObjectURL(urls.processed);
+  for (const capture of [urls.raw, urls.processed]) {
+    if (capture) {
+      URL.revokeObjectURL(capture.url);
+    }
   }
 }
 

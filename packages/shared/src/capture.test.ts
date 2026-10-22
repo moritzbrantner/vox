@@ -133,6 +133,12 @@ describe("provenance", () => {
 describe("assessCaptureQuality", () => {
   const ok = descriptor({ sampleRate: 16_000 });
 
+  test("refuses intervention output offered for assessment as the speaker's input", () => {
+    const playback = descriptor({ role: "interventionOutput" });
+    expect(() => assessCaptureQuality(playback, metrics())).toThrow(/not the speaker's input/);
+    expect(() => assessRunCaptureQuality(playback, undefined)).toThrow(/not the speaker's input/);
+  });
+
   test("clean single-speaker speech is usable", () => {
     expect(assessCaptureQuality(ok, metrics())).toEqual({ state: "usable", issues: [] });
   });

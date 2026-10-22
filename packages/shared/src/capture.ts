@@ -55,6 +55,19 @@ export function isUnprocessedInput(descriptor: RecordingDescriptor) {
   return Object.values(descriptor.preprocessing).every((setting) => setting.applied === false);
 }
 
+/**
+ * Assessment scores the speaker's captured speech only. Audio the app produced or altered (delayed
+ * or pitch-shifted feedback) is refused rather than silently analyzed as the speaker's input.
+ */
+export function requireSpeakerInput(descriptor: RecordingDescriptor): RecordingDescriptor {
+  if (descriptor.role !== "appInput") {
+    throw new Error(
+      `Capture ${descriptor.runId} is ${descriptor.role}, not the speaker's input; it cannot be assessed.`,
+    );
+  }
+  return descriptor;
+}
+
 /** Sorted, merged gap intervals, so overlapping events are counted once. */
 export function mergedDiscontinuities(descriptor: RecordingDescriptor) {
   const sorted = descriptor.discontinuities
@@ -210,6 +223,7 @@ export function assessRunCaptureQuality(
   measured: MeasuredCaptureMetrics | undefined,
   captureSeconds?: number,
 ): RunCaptureQuality {
+  requireSpeakerInput(descriptor);
   if (measured) {
     const quality = assessCaptureQuality(descriptor, captureMetricsFromMeasurement(measured));
     const measuredSeconds = Math.max(0, measured.durationSeconds);
@@ -306,6 +320,7 @@ export function assessCaptureQuality(
   descriptor: RecordingDescriptor,
   metrics: CaptureMetrics,
 ): CaptureQuality {
+  requireSpeakerInput(descriptor);
   const limits = CAPTURE_QUALITY_LIMITS;
   const issues: CaptureQualityIssue[] = [];
   if (metrics.channelCount < 1) issues.push("noChannels");

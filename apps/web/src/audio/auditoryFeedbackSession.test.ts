@@ -1,3 +1,4 @@
+import { assessRunCaptureQuality } from "@stutter-tracker/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_AUDITORY_FEEDBACK_SETTINGS,
@@ -36,6 +37,10 @@ class FakeGain extends FakeNode {
 class FakeTrack extends EventTarget {
   stopped = false;
   readyState: "live" | "ended" = "live";
+  label = "Built-in microphone";
+  getSettings() {
+    return { echoCancellation: true, noiseSuppression: true, autoGainControl: false };
+  }
   stop() {
     this.stopped = true;
     this.readyState = "ended";
@@ -104,6 +109,7 @@ let duringWorkletLoad: () => void | Promise<void> = () => undefined;
 class FakeContext {
   state: "running" | "closed" = "running";
   currentTime = 0;
+  sampleRate = 48_000;
   readonly destination = new FakeNode();
   readonly gains: FakeGain[] = [];
   readonly nodes: FakeNode[] = [];
@@ -213,9 +219,34 @@ describe("auditory feedback session lifecycle", () => {
     expect(context.audible).toBe(false);
 
     const recording = await stopping;
-    expect(recording.raw).toBeInstanceOf(Blob);
-    expect(recording.processed).toBeInstanceOf(Blob);
+    expect(recording.raw?.blob).toBeInstanceOf(Blob);
+    expect(recording.processed?.blob).toBeInstanceOf(Blob);
     expectReleased();
+  });
+
+  it("keeps distinct provenance for the raw input and the processed monitor capture", async () => {
+    const session = await startAuditoryFeedbackSession(DEFAULT_AUDITORY_FEEDBACK_SETTINGS);
+    const { raw, processed } = await session.stop();
+
+    expect(raw?.descriptor).toMatchObject({
+      role: "appInput",
+      origin: "browser",
+      sampleRate: 48_000,
+    });
+    expect(processed?.descriptor).toMatchObject({
+      role: "interventionOutput",
+      origin: "browser",
+      sampleRate: 48_000,
+    });
+    expect(raw?.descriptor.runId).toBe(processed?.descriptor.runId);
+    expect(raw?.descriptor.preprocessing.echoCancellation).toEqual({
+      requested: true,
+      applied: true,
+    });
+    expect(() => assessRunCaptureQuality(processed!.descriptor, undefined)).toThrow(
+      /interventionOutput, not the speaker's input/,
+    );
+    expect(() => assessRunCaptureQuality(raw!.descriptor, undefined)).not.toThrow();
   });
 
   it("bounds teardown when a recorder never emits stop", async () => {
@@ -230,7 +261,7 @@ describe("auditory feedback session lifecycle", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     const recording = await stopping;
-    expect(recording.raw).toBeInstanceOf(Blob);
+    expect(recording.raw?.blob).toBeInstanceOf(Blob);
     expectReleased();
   });
 
@@ -238,7 +269,7 @@ describe("auditory feedback session lifecycle", () => {
     recorderMode = "throw";
     const session = await startAuditoryFeedbackSession(DEFAULT_AUDITORY_FEEDBACK_SETTINGS);
 
-    await expect(session.stop()).resolves.toMatchObject({ raw: expect.any(Blob) });
+    await expect(session.stop()).resolves.toMatchObject({ raw: { blob: expect.any(Blob) } });
     expectReleased();
   });
 
@@ -248,7 +279,7 @@ describe("auditory feedback session lifecycle", () => {
 
     const recording = await session.stop();
 
-    expect(recording.raw?.size).toBe("chunkfinal".length);
+    expect(recording.raw?.blob.size).toBe("chunkfinal".length);
     expectReleased();
   });
 
