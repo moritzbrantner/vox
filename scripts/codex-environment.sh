@@ -53,18 +53,12 @@ if path.is_file():
         print(value.split('@', 1)[1])
 PY
 )"
+# Toolchains track the latest stable release (owner decision 2026-10-23): declarations are
+# minimums, so any installed Bun, Node or Rust release satisfies them.
 if [[ -n "$desired_bun" ]]; then
-  if ! [[ "$desired_bun" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    printf 'Bun packageManager must use an exact version, got %s\n' "$desired_bun" >&2
-    exit 2
-  fi
   if ! command -v bun >/dev/null 2>&1; then
-    printf 'Bun %s is required but is not installed; provision the exact version with a trusted pinned environment mechanism before running this script\n' "$desired_bun" >&2
+    printf 'Bun is required (packageManager bun@%s) but is not installed; install the latest stable Bun before running this script\n' "$desired_bun" >&2
     exit 2
-  fi
-  if [[ "$(bun --version)" != "$desired_bun" ]]; then
-    # Bun tracks latest (owner decision 2026-10-21); packageManager is informational.
-    printf 'Bun differs from packageManager (declared %s, observed %s); continuing\n' "$desired_bun" "$(bun --version)" >&2
   fi
   if [[ -d "$HOME/.bun/bin" ]]; then
     export PATH="$HOME/.bun/bin:$PATH"
@@ -79,21 +73,9 @@ if path.is_file():
     print(path.read_text().strip())
 PY
 )"
-if [[ -n "$desired_node" ]]; then
-  if ! [[ "$desired_node" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    printf '.node-version must use an exact version, got %s\n' "$desired_node" >&2
-    exit 2
-  fi
-  if ! command -v node >/dev/null 2>&1; then
-    printf 'Node %s is required but is not installed; provision the exact version with a trusted pinned environment mechanism before running this script\n' "$desired_node" >&2
-    exit 2
-  fi
-  observed_node="$(node --version)"
-  observed_node="${observed_node#v}"
-  if [[ "$observed_node" != "$desired_node" ]]; then
-    printf 'Node preflight mismatch: expected %s, got %s\n' "$desired_node" "$observed_node" >&2
-    exit 1
-  fi
+if [[ -n "$desired_node" ]] && ! command -v node >/dev/null 2>&1; then
+  printf 'Node is required (.node-version %s) but is not installed; install the latest stable Node before running this script\n' "$desired_node" >&2
+  exit 2
 fi
 
 rust_toolchain="$(python3 - "$root/rust-toolchain.toml" <<'PY'
@@ -105,12 +87,8 @@ if path.is_file():
 PY
 )"
 if [[ -n "$rust_toolchain" ]]; then
-  if ! [[ "$rust_toolchain" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    printf 'Rust toolchain must use an exact version, got %s\n' "$rust_toolchain" >&2
-    exit 2
-  fi
   if ! command -v rustup >/dev/null 2>&1; then
-    printf 'rustup is required to provision Rust %s; install rustup through a trusted pinned environment mechanism before running this script\n' "$rust_toolchain" >&2
+    printf 'rustup is required to provision Rust %s; install rustup before running this script\n' "$rust_toolchain" >&2
     exit 2
   fi
   if [[ -d "$HOME/.cargo/bin" ]]; then
@@ -142,23 +120,3 @@ PY
 for command in "${environment_commands[@]}"; do
   (cd "$root" && bash -lc "$command")
 done
-
-if [[ -n "$desired_bun" && "$(bun --version)" != "$desired_bun" ]]; then
-  # Bun tracks latest (owner decision 2026-10-21); packageManager is informational.
-  printf 'Bun differs from packageManager (declared %s, observed %s); continuing\n' "$desired_bun" "$(bun --version)" >&2
-fi
-if [[ -n "$desired_node" ]]; then
-  observed_node="$(node --version)"
-  observed_node="${observed_node#v}"
-  if [[ "$observed_node" != "$desired_node" ]]; then
-    printf 'Node preflight mismatch: expected %s, got %s\n' "$desired_node" "$observed_node" >&2
-    exit 1
-  fi
-fi
-if [[ -n "$rust_toolchain" ]]; then
-  observed_rust="$(cd "$root" && rustc --version | awk '{print $2}')"
-  if [[ "$observed_rust" != "$rust_toolchain" ]]; then
-    printf 'Rust preflight mismatch: expected %s, got %s\n' "$rust_toolchain" "$observed_rust" >&2
-    exit 1
-  fi
-fi
