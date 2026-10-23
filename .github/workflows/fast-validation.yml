@@ -31,7 +31,7 @@ jobs:
             report: compute-client
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@8da6ad737d4746159414bde686d5c7422e0a9232
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@40ddfa48b3e68fcde2f055cd5e604f32d944e999
     with:
       tier: fast
       component: ${{ matrix.component }}
