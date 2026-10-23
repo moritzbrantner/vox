@@ -1,4 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>moritzbrantner/coding-agent-conventions"]
+  "extends": ["github>moritzbrantner/coding-agent-conventions"],
+  "packageRules": [
+    {
+      "description": "The desktop crate resolves moenarch-* crates only through local source-deps patches (they are not on crates.io), so Renovate cannot regenerate its Cargo.lock; update manifests only and resolve locally in source mode.",
+      "matchManagers": ["cargo"],
+      "matchFileNames": ["apps/desktop/src-tauri/Cargo.toml"],
+      "updateLockFiles": false
+    }
+  ]
 }
