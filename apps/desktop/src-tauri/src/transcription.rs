@@ -248,7 +248,11 @@ where
     }
     writer.flush()?;
 
-    let checksum = format!("{:x}", hasher.finalize());
+    let checksum: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     if checksum != model.checksum_sha256() {
         let _ = fs::remove_file(&temp_path);
         return Err(TranscriptionCommandError::Invalid(format!(
