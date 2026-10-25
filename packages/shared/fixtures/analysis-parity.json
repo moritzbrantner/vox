@@ -1,0 +1,258 @@
+{
+  "capabilities": {
+    "desktopNative": {
+      "outputs": {
+        "acousticEvents": "supported",
+        "captureMetrics": "supported",
+        "eventEvidence": "supported",
+        "filler": "supported",
+        "fusion": "supported",
+        "missingObservations": "supported",
+        "pauseBlock": "supported",
+        "prolongation": "supported",
+        "soundRepetition": "supported",
+        "speakerAttribution": "unsupported",
+        "wordRepetition": "supported"
+      },
+      "producer": "desktopNative",
+      "reduced": false
+    }
+  },
+  "cases": [
+    {
+      "name": "pauses",
+      "native": [
+        {
+          "endSeconds": 2.0,
+          "kind": "block",
+          "startSeconds": 1.0,
+          "text": "we"
+        }
+      ],
+      "request": {
+        "pauses": [
+          {
+            "afterText": "we",
+            "endSeconds": 2,
+            "startSeconds": 1
+          },
+          {
+            "endSeconds": 3.5,
+            "startSeconds": 3
+          }
+        ],
+        "segments": [
+          {
+            "endSeconds": 1,
+            "isFinal": true,
+            "startSeconds": 0,
+            "text": "well then"
+          },
+          {
+            "endSeconds": 3,
+            "isFinal": true,
+            "startSeconds": 2,
+            "text": "we go"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fillers",
+      "native": [
+        {
+          "endSeconds": 0.42857142857142855,
+          "kind": "filler",
+          "startSeconds": 0.0,
+          "text": "um"
+        },
+        {
+          "endSeconds": 1.7142857142857142,
+          "kind": "filler",
+          "startSeconds": 1.2857142857142856,
+          "text": "uh"
+        },
+        {
+          "endSeconds": 2.571428571428571,
+          "kind": "filler",
+          "startSeconds": 2.142857142857143,
+          "text": "ähm"
+        }
+      ],
+      "request": {
+        "pauses": [],
+        "segments": [
+          {
+            "endSeconds": 3,
+            "isFinal": true,
+            "startSeconds": 0,
+            "text": "um so I uh want ähm this"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prolongations",
+      "native": [
+        {
+          "endSeconds": 0.6,
+          "kind": "prolongation",
+          "startSeconds": 0.0,
+          "text": "sssstart"
+        },
+        {
+          "endSeconds": 2.0,
+          "kind": "prolongation",
+          "startSeconds": 1.5,
+          "text": "nooooo"
+        }
+      ],
+      "request": {
+        "pauses": [],
+        "segments": [
+          {
+            "endSeconds": 1.2,
+            "isFinal": true,
+            "startSeconds": 0,
+            "text": "sssstart now"
+          },
+          {
+            "endSeconds": 2.5,
+            "isFinal": true,
+            "startSeconds": 1.5,
+            "text": "nooooo way"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repetitions",
+      "native": [
+        {
+          "endSeconds": 1.0,
+          "kind": "wordRepetition",
+          "startSeconds": 0.0,
+          "text": "I I I"
+        },
+        {
+          "endSeconds": 3.166666666666667,
+          "kind": "wordRepetition",
+          "startSeconds": 2.5,
+          "text": "the the"
+        },
+        {
+          "endSeconds": 4.166666666666666,
+          "kind": "wordRepetition",
+          "startSeconds": 3.5,
+          "text": "is is"
+        },
+        {
+          "endSeconds": 5.3,
+          "kind": "block",
+          "startSeconds": 4.5,
+          "text": "pause"
+        }
+      ],
+      "request": {
+        "pauses": [
+          {
+            "endSeconds": 5.3,
+            "startSeconds": 4.5
+          }
+        ],
+        "segments": [
+          {
+            "endSeconds": 2,
+            "isFinal": true,
+            "startSeconds": 0,
+            "text": "I I I want to go"
+          },
+          {
+            "endSeconds": 4.5,
+            "isFinal": true,
+            "startSeconds": 2.5,
+            "text": "the the train is is late"
+          },
+          {
+            "endSeconds": 5.5,
+            "isFinal": true,
+            "startSeconds": 5,
+            "text": "b but"
+          }
+        ]
+      }
+    },
+    {
+      "name": "partial and final",
+      "native": [
+        {
+          "endSeconds": 0.5,
+          "kind": "filler",
+          "startSeconds": 0.0,
+          "text": "um"
+        },
+        {
+          "endSeconds": 2.5,
+          "kind": "block",
+          "startSeconds": 1.5,
+          "text": "pause"
+        }
+      ],
+      "request": {
+        "pauses": [
+          {
+            "endSeconds": 2.5,
+            "startSeconds": 1.5
+          }
+        ],
+        "segments": [
+          {
+            "endSeconds": 1,
+            "isFinal": false,
+            "startSeconds": 0,
+            "text": "um um"
+          },
+          {
+            "endSeconds": 1.5,
+            "isFinal": true,
+            "startSeconds": 0,
+            "text": "um we need"
+          },
+          {
+            "endSeconds": 9,
+            "isFinal": false,
+            "startSeconds": 1.5,
+            "text": "need need"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no final transcript",
+      "native": [
+        {
+          "endSeconds": 1.9,
+          "kind": "block",
+          "startSeconds": 1.0,
+          "text": "pause"
+        }
+      ],
+      "request": {
+        "pauses": [
+          {
+            "endSeconds": 1.9,
+            "startSeconds": 1
+          }
+        ],
+        "segments": [
+          {
+            "endSeconds": 1,
+            "isFinal": false,
+            "startSeconds": 0,
+            "text": "so so"
+          }
+        ]
+      }
+    }
+  ]
+}

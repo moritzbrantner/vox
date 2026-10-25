@@ -91,7 +91,10 @@ pub(crate) fn cases() -> Vec<(&'static str, AnalyzeSpeechRequest)> {
     let rate = 16_000;
     vec![
         ("empty", request(vec![], vec![], None)),
-        ("silence/pause only", request(vec![], vec![pause(0.0, 3.0)], None)),
+        (
+            "silence/pause only",
+            request(vec![], vec![pause(0.0, 3.0)], None),
+        ),
         (
             "silence/zero audio",
             request(vec![], vec![], Some((silence(rate, 2.0), Some(rate)))),
@@ -127,7 +130,11 @@ pub(crate) fn cases() -> Vec<(&'static str, AnalyzeSpeechRequest)> {
         ),
         (
             "partial only",
-            request(vec![segment("go go", 0.0, 1.0, false)], vec![pause(1.0, 2.0)], None),
+            request(
+                vec![segment("go go", 0.0, 1.0, false)],
+                vec![pause(1.0, 2.0)],
+                None,
+            ),
         ),
         (
             "overlap/prolongation fused",
@@ -197,7 +204,10 @@ pub(crate) fn cases() -> Vec<(&'static str, AnalyzeSpeechRequest)> {
             request(
                 vec![segment("late late words", 91.0, 92.0, true)],
                 vec![],
-                Some(([silence(4_000, 91.0), sine(180.0, 4_000, 1.0)].concat(), Some(4_000))),
+                Some((
+                    [silence(4_000, 91.0), sine(180.0, 4_000, 1.0)].concat(),
+                    Some(4_000),
+                )),
             ),
         ),
         (
@@ -248,7 +258,10 @@ pub(crate) fn cases() -> Vec<(&'static str, AnalyzeSpeechRequest)> {
 
 /// A report as the legacy detector serialized it, or its error.
 pub(crate) fn legacy_view(
-    result: Result<crate::speech_analysis::AnalysisReport, crate::speech_analysis::SpeechAnalysisError>,
+    result: Result<
+        crate::speech_analysis::AnalysisReport,
+        crate::speech_analysis::SpeechAnalysisError,
+    >,
 ) -> Value {
     match result {
         Ok(report) => {
@@ -280,13 +293,17 @@ pub(crate) fn differences(path: &str, expected: &Value, actual: &Value, out: &mu
     match (expected, actual) {
         (Value::Number(left), Value::Number(right)) => {
             let (left, right) = (left.as_f64().unwrap(), right.as_f64().unwrap());
-            let tolerance = ABSOLUTE_TOLERANCE.max(RELATIVE_TOLERANCE * left.abs().max(right.abs()));
+            let tolerance =
+                ABSOLUTE_TOLERANCE.max(RELATIVE_TOLERANCE * left.abs().max(right.abs()));
             if (left - right).abs() > tolerance {
                 out.push(format!("{path}: expected {left}, got {right}"));
             }
         }
         (Value::Object(left), Value::Object(right)) => {
-            for key in left.keys().chain(right.keys().filter(|key| !left.contains_key(*key))) {
+            for key in left
+                .keys()
+                .chain(right.keys().filter(|key| !left.contains_key(*key)))
+            {
                 differences(
                     &format!("{path}.{key}"),
                     left.get(key).unwrap_or(&Value::Null),
@@ -297,7 +314,11 @@ pub(crate) fn differences(path: &str, expected: &Value, actual: &Value, out: &mu
         }
         (Value::Array(left), Value::Array(right)) => {
             if left.len() != right.len() {
-                out.push(format!("{path}: expected {} items, got {}", left.len(), right.len()));
+                out.push(format!(
+                    "{path}: expected {} items, got {}",
+                    left.len(),
+                    right.len()
+                ));
                 return;
             }
             for (index, (left, right)) in left.iter().zip(right).enumerate() {
@@ -338,4 +359,52 @@ fn evidence_path_reproduces_the_legacy_reference() {
         differences(name, value, &actual[name], &mut out);
     }
     assert!(out.is_empty(), "semantic differences:\n{}", out.join("\n"));
+}
+
+const PARITY_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../packages/shared/fixtures/analysis-parity.json"
+);
+
+/// The cross-runtime fixture shared with `packages/shared`: native capabilities and the native
+/// events for transcript/pause-only inputs, which the shared fallback test compares with its own
+/// output (`STUTTER_BENCH.md`, "Evidence contract and cross-runtime capabilities"). Regenerate
+/// with `VOX_UPDATE_SPEECH_REFERENCE=1`.
+#[test]
+fn cross_runtime_parity_fixture_matches_native_analysis() {
+    let mut fixture: Value =
+        serde_json::from_str(&std::fs::read_to_string(PARITY_PATH).unwrap()).unwrap();
+    let mut actual = fixture.clone();
+    actual["capabilities"] = serde_json::json!({
+        "desktopNative": crate::speech_pipeline::native_capabilities(),
+    });
+    for case in actual["cases"].as_array_mut().unwrap() {
+        let request: AnalyzeSpeechRequest =
+            serde_json::from_value(case["request"].clone()).unwrap();
+        let report = crate::speech_pipeline::analyze_speech_session(request).unwrap();
+        case["native"] = report
+            .events
+            .iter()
+            .map(|event| {
+                serde_json::json!({
+                    "kind": event.kind,
+                    "startSeconds": event.start_seconds,
+                    "endSeconds": event.end_seconds,
+                    "text": event.text,
+                })
+            })
+            .collect();
+    }
+    if std::env::var_os("VOX_UPDATE_SPEECH_REFERENCE").is_some() {
+        let text = serde_json::to_string_pretty(&actual).unwrap();
+        std::fs::write(PARITY_PATH, text + "\n").unwrap();
+        fixture = actual.clone();
+    }
+    let mut out = Vec::new();
+    differences("parity", &fixture, &actual, &mut out);
+    assert!(
+        out.is_empty(),
+        "native output differs from the parity fixture:\n{}",
+        out.join("\n")
+    );
 }

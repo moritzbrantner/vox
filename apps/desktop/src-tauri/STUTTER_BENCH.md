@@ -90,3 +90,74 @@ The paired-difference computation (criteria 2–3) and abstention coverage (5) a
 | Limitations | No event timing; noisy and ambiguous clips are excluded by flag and counted in the report |
 
 Runtime profiling is separate. `runtime-profiler` owns process/runtime evidence; this benchmark owns correctness semantics.
+
+## Evidence contract and cross-runtime capabilities
+
+Vox analyzes a session in one of three places. They do not produce the same outputs, and a report says which one produced it.
+
+| Producer | Where it runs | Algorithm |
+| --- | --- | --- |
+| `desktopNative` | Tauri desktop app | `speech_pipeline::analyze_speech_session`: typed observations and evidence-carrying events |
+| `computeServer` | `apps/server` | shared `fallbackAnalyze` (TypeScript); capture metrics from the native worker |
+| `onDevice` | browser or mobile without a server | shared `fallbackAnalyze`; capture metrics from the audio-analysis WASM kernel when it loads |
+
+Every report from these producers carries `capabilities`. Reports saved before it existed have none; their capabilities are unknown, not full.
+
+### Capability matrix
+
+`supported`: produced by the full method. `reduced`: produced by a simpler method, not comparable with a supported output. `unsupported`: never produced; its absence says nothing about the speech.
+
+| Output | desktopNative | computeServer / onDevice |
+| --- | --- | --- |
+| `wordRepetition` | supported (a run of 2+ words is one event) | reduced (adjacent pairs; a run of three is two overlapping events) |
+| `soundRepetition` (fragment + word, hyphenated sounds) | supported | unsupported |
+| `prolongation` (stretched letters) | supported | supported |
+| `filler` | supported | supported |
+| `pauseBlock` (captured pause ≥ 0.75 s) | supported | supported |
+| `acousticEvents` (blocks, prolongations, repeated bursts from audio) | supported (audio-analysis VAD, onsets, pitch, spectrum) | reduced (own energy VAD and onset heuristics) |
+| `fusion` (transcript + acoustic candidates) | supported | reduced |
+| `eventEvidence` (event ids, cited observations, explanation) | supported | unsupported |
+| `missingObservations` | supported | unsupported |
+| `captureMetrics` | supported | supported |
+| `speakerAttribution` | unsupported | unsupported |
+
+The rows live in `packages/shared/src/analysisCapabilities.ts` (`ANALYSIS_CAPABILITIES`) and, for the native analyzer, in `speech_pipeline::native_capabilities`; both are checked against `packages/shared/fixtures/analysis-parity.json`.
+
+Confidences are calibrated per analyzer (a word repetition is 0.86 natively, 0.78 in the fallback) and are never compared across producers. Known input differences: the fallback rejects audio shorter than 250 ms, where native analysis analyzes the transcript and reports the acoustic channel as `audioTooShortForAnalysis`; native normalization keeps inner and trailing hyphens of a token (`b-`), the fallback strips them.
+
+### Cross-runtime parity
+
+Only outputs both producers fully support are expected to agree on the same input: currently `prolongation`, `filler` and `pauseBlock` (`equivalentOutputs`). On every case of `analysis-parity.json`, the shared fallback must reproduce the native events' kind, text, start and end. The native test `cross_runtime_parity_fixture_matches_native_analysis` writes and checks the expected events; `packages/shared/src/analysisCapabilities.test.ts` compares the fallback with them.
+
+Reduced and unsupported outputs are evaluated on their own terms instead: every native word repetition must overlap a fallback word repetition, and the fallback never reports a sound repetition. Acoustic outputs differ by method and are not compared across runtimes.
+
+**Numerical tolerance.** Comparisons accept an absolute or relative difference of `1e-9` (`speech_reference::ABSOLUTE_TOLERANCE` / `RELATIVE_TOLERANCE`, `TOLERANCE` in the shared test). Transcript and pause times are plain IEEE-754 double arithmetic in both languages and agree well inside it. Audio-derived numbers go through resampling, FFT and autocorrelation in the audio-analysis crates, so another platform, compiler or SIMD path may round them differently; if that exceeds the tolerance, record the platform and the difference rather than widening the tolerance silently.
+
+### Native evidence
+
+Each native event carries `evidence`:
+
+- `id`: `<kind>:<first observation id>`, e.g. `wordRepetition:transcript:1:0`, `block:pause:2`, `prolongation:acoustic:speech:0`, `hyphenatedSoundRepetition:transcript:0:0`. Stable for the same input.
+- `supporting`: the observations the decision rests on. A fused event lists its transcript observations, then those of the acoustic candidate it was fused with.
+- `conflicting` (when present): observations that speak against the event without overturning it. Currently: speech activity of at least 0.1 s inside a reported block.
+- `explanation`: the decision in words.
+
+`AnalysisReport.observations` lists every cited observation and one explicit observation for each missing channel or uncovered range:
+
+| Observation id | Meaning |
+| --- | --- |
+| `transcript:<segment>:<token>` | final transcript token; times interpolated within the segment (`interpolatedWithinSegment`) until alignment exists |
+| `pause:<i>` | captured pause |
+| `audio:0` | the supplied audio |
+| `acoustic:speech:<i>` | speech-activity interval in the analyzed window, always `attribution: unattributed`: someone spoke, not who |
+| `acoustic:onset:<i>` | acoustic onset |
+| `missing:acoustic` | `noAudio`, or `audioTooShortForAnalysis` (under 250 ms) |
+| `missing:acoustic:afterWindow` | `beyondAnalyzedAudioWindow`: the recording continues after the first 90 s that acoustic analysis reads |
+| `missing:transcript` | `noFinalTranscript` |
+| `missing:speaker` | `noSpeakerAttribution`: who spoke, and whether voices overlapped, is unknown |
+
+A missing observation is never a negative: no acoustic event without analyzed audio does not mean fluent speech, and no conflict without audio is not a confirmation. Speaker identity is not inferred from voice activity or from a session-wide "only I speak" declaration.
+
+### Semantic regression check
+
+`fixtures/speech/legacy-reference.json` holds the reports of the batch detector before its stages moved onto the evidence path, for silence, repetitions, overlapping channels, incomplete input, partial and final transcripts, and invalid numeric or timing data. `speech_reference::evidence_path_reproduces_the_legacy_reference` requires the current analysis to reproduce them within the tolerance, ignoring only what the evidence path adds (`observations`, `capabilities`, event `evidence`). Regenerate it with `VOX_UPDATE_SPEECH_REFERENCE=1 cargo test speech_reference` only for an intentional change, together with corpus results and a `SPEECH_ANALYSIS_VERSION` bump.
