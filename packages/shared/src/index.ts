@@ -129,7 +129,31 @@ export type AnalysisReport = {
    * reports that predate it; their capabilities are unknown, not full.
    */
   capabilities?: import("./analysisCapabilities").AnalysisCapabilities;
+  /**
+   * Detections withheld for insufficient evidence ("possible – not enough evidence"). They are
+   * not events: every count, rate and trend leaves them out. Absent when there are none and in
+   * reports that predate it.
+   */
+  insufficientEvidence?: PossibleEvent[];
 };
+
+/** Why a detection was withheld: `audioOnly` means only the audio supports it. */
+export type InsufficientEvidenceReason = "audioOnly";
+
+/** A withheld detection and the candidate it was withheld from, with that candidate's evidence. */
+export type PossibleEvent = {
+  reason: InsufficientEvidenceReason;
+  candidate: StutterEvent;
+};
+
+/**
+ * Sound repetitions found in the audio alone are withheld: on SEP-28k, repeated onset bursts
+ * fire on fluent speech about as often as on sound repetitions
+ * (`docs/benchmarks/sep28k-sound-repetition.md`).
+ */
+export function isAudioOnlySoundRepetition(eventItem: StutterEvent): boolean {
+  return eventItem.kind === "soundRepetition" && eventItem.source === "acoustic";
+}
 
 export type SpeechStats = {
   speakingDurationSeconds: number;
@@ -410,8 +434,12 @@ export function fallbackAnalyze(
   if (acoustic) {
     duration = Math.max(duration, acoustic.stats.analyzedDurationSeconds);
   }
-  const events = fuseEvents(transcriptEvents, acoustic?.events ?? []);
-  events.sort((left, right) => left.startSeconds - right.startSeconds);
+  const fused = fuseEvents(transcriptEvents, acoustic?.events ?? []);
+  fused.sort((left, right) => left.startSeconds - right.startSeconds);
+  const events = fused.filter((item) => !isAudioOnlySoundRepetition(item));
+  const insufficientEvidence = fused
+    .filter(isAudioOnlySoundRepetition)
+    .map((candidate): PossibleEvent => ({ reason: "audioOnly", candidate }));
   const minutes = Math.max(duration / 60, 1 / 60);
   const rate = events.length / minutes;
   const density = wordCount ? events.length / wordCount : 0;
@@ -451,6 +479,7 @@ export function fallbackAnalyze(
     }, {}),
     acousticStats: acoustic?.stats,
     capabilities: ANALYSIS_CAPABILITIES[producer],
+    ...(insufficientEvidence.length > 0 ? { insufficientEvidence } : {}),
   };
 }
 

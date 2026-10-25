@@ -13,7 +13,8 @@ use serde::Serialize;
 
 use crate::speech_analysis::{
     analyze_with_evidence, timed_tokens, AcousticObservations, AnalysisReport,
-    AnalyzeSpeechRequest, SpeechAnalysisError, StutterEvent, StutterKind, TimedToken,
+    AnalyzeSpeechRequest, EvidencePolicy, SpeechAnalysisError, StutterEvent, StutterKind,
+    TimedToken, PRODUCT_EVIDENCE_POLICY,
 };
 
 /// Appended to the explanation of every event that rests on transcript token times.
@@ -196,9 +197,17 @@ pub(crate) fn native_capabilities() -> AnalysisCapabilities {
 pub(crate) fn analyze_speech_session(
     request: AnalyzeSpeechRequest,
 ) -> Result<AnalysisReport, SpeechAnalysisError> {
+    analyze_speech_session_with(request, PRODUCT_EVIDENCE_POLICY)
+}
+
+/// `analyze_speech_session` under an explicit evidence policy (the benchmark compares them).
+pub(crate) fn analyze_speech_session_with(
+    request: AnalyzeSpeechRequest,
+    policy: EvidencePolicy,
+) -> Result<AnalysisReport, SpeechAnalysisError> {
     let observations = collect_transcript_and_pause_observations(&request)?;
     let audio = audio_window(&request);
-    let (mut report, acoustic) = analyze_with_evidence(request)?;
+    let (mut report, acoustic) = analyze_with_evidence(request, policy)?;
     let mut observations = observations;
     observations.extend(acoustic_observations(audio, acoustic.as_ref()));
     observations.extend(missing_observations(
@@ -208,9 +217,16 @@ pub(crate) fn analyze_speech_session(
     ));
     annotate_conflicts(&mut report.events, &observations);
 
+    // Withheld candidates link to their evidence too.
     let cited: Vec<&str> = report
         .events
         .iter()
+        .chain(
+            report
+                .insufficient_evidence
+                .iter()
+                .map(|possible| &possible.candidate),
+        )
         .filter_map(|event| event.evidence.as_ref())
         .flat_map(|evidence| evidence.supporting.iter().chain(&evidence.conflicting))
         .map(String::as_str)

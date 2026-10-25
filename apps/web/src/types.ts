@@ -74,6 +74,17 @@ export type AnalysisReport = {
   captureMetrics?: import("@stutter-tracker/shared").MeasuredCaptureMetrics;
   /** Capture-quality gate of the run; reports without it predate the gate. */
   captureQuality?: import("@stutter-tracker/shared").RunCaptureQuality;
+  /**
+   * Detections withheld for insufficient evidence. Not events: shown only in the analysis
+   * details and left out of every count, rate and trend.
+   */
+  insufficientEvidence?: PossibleEvent[];
+};
+
+export type PossibleEvent = {
+  reason: import("@stutter-tracker/shared").InsufficientEvidenceReason;
+  /** The withheld candidate; `evidence` cites the report's observations (native analysis). */
+  candidate: StutterEvent & { evidence?: import("@stutter-tracker/shared").EventEvidence };
 };
 
 export type SpeechStats = {

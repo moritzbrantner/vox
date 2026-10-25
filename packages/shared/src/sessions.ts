@@ -19,7 +19,7 @@ import {
 export const SESSION_SCHEMA_VERSION = 2;
 
 /** Bump whenever `fallbackAnalyze` output can change for the same input. */
-export const SHARED_ANALYSIS_VERSION = "1";
+export const SHARED_ANALYSIS_VERSION = "2";
 
 export type AnalyzerProducer = "onDevice" | "computeServer" | "desktopNative";
 

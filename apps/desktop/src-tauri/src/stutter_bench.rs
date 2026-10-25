@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::speech_analysis::{AnalyzeSpeechRequest, SpeechAnalysisError, StutterKind};
+use crate::speech_analysis::{
+    AnalysisReport, AnalyzeSpeechRequest, EvidencePolicy, SpeechAnalysisError, StutterKind,
+};
 
 const BENCHMARK_KINDS: [StutterKind; 5] = [
     StutterKind::WordRepetition,
@@ -42,6 +44,12 @@ pub(crate) enum BenchmarkError {
     DuplicateClip(String),
     #[error("speaker mapping lists clip `{0}` more than once")]
     DuplicateSpeakerMapping(String),
+    #[error(
+        "a candidate comparison needs a speaker-exclusive partition (a verified speaker mapping)"
+    )]
+    NoComparisonPartition,
+    #[error("runs are not comparable: {0} differs")]
+    IncomparableRuns(&'static str),
     #[error("labels contain no clip rows")]
     EmptyManifest,
     #[error("the row limit must be at least 1")]
@@ -69,6 +77,9 @@ struct BenchmarkClip {
     duration_seconds: f64,
     reference_kinds: Vec<StutterKind>,
     predicted_kinds: Vec<StutterKind>,
+    /// Kinds the detector abstained on ("insufficient evidence"): neither a detection nor a
+    /// negative. A reference positive it abstains on is a miss.
+    abstained_kinds: Vec<StutterKind>,
     predicted_probabilities: Option<HashMap<StutterKind, f64>>,
 }
 
@@ -79,6 +90,11 @@ struct KindMetrics {
     false_positive: usize,
     false_negative: usize,
     true_negative: usize,
+    /// Clips the detector abstained on for this kind; reference positives among them are also
+    /// counted as false negatives, reference negatives are neither true nor false negatives.
+    abstained: usize,
+    /// Share of clips with a decision (not abstained) for this kind.
+    coverage: f64,
     precision: f64,
     recall: f64,
     f1: f64,
@@ -225,6 +241,8 @@ fn evaluate_clip_refs(clips: &[&BenchmarkClip]) -> Result<BenchmarkReport, Bench
 
         let references = clip.reference_kinds.iter().copied().collect::<HashSet<_>>();
         let predictions = clip.predicted_kinds.iter().copied().collect::<HashSet<_>>();
+        let abstentions = clip.abstained_kinds.iter().copied().collect::<HashSet<_>>();
+        // An abstention is not a detection, so it never flags a fluent clip.
         if references.is_empty() {
             fluent_clip_count += 1;
             if !predictions.is_empty() {
@@ -248,11 +266,16 @@ fn evaluate_clip_refs(clips: &[&BenchmarkClip]) -> Result<BenchmarkReport, Bench
             let metrics = by_kind
                 .get_mut(&kind)
                 .expect("all benchmark kinds are initialized");
+            let abstained = !predicted && abstentions.contains(&kind);
+            if abstained {
+                metrics.abstained += 1;
+            }
             match (expected, predicted) {
                 (true, true) => metrics.true_positive += 1,
                 (false, true) => metrics.false_positive += 1,
                 (true, false) => metrics.false_negative += 1,
-                (false, false) => metrics.true_negative += 1,
+                (false, false) if !abstained => metrics.true_negative += 1,
+                (false, false) => {}
             }
 
             if let Some(probabilities) = probabilities {
@@ -288,6 +311,7 @@ fn evaluate_clip_refs(clips: &[&BenchmarkClip]) -> Result<BenchmarkReport, Bench
             metrics.true_positive + metrics.false_negative,
         );
         metrics.f1 = f1(metrics.precision, metrics.recall);
+        metrics.coverage = ratio(clips.len() - metrics.abstained, clips.len());
         true_positive += metrics.true_positive;
         false_positive += metrics.false_positive;
         false_negative += metrics.false_negative;
@@ -353,27 +377,60 @@ fn speaker_safe_split(
 fn evaluate_existing_detector(cases: &[BaselineCase]) -> Result<BenchmarkReport, BenchmarkError> {
     let mut clips = Vec::with_capacity(cases.len());
     for case in cases {
-        let report = crate::speech_pipeline::analyze_speech_session(case.request.clone())
-            .map_err(|error| BenchmarkError::Detector(error.to_string()))?;
-        let observed = report
-            .events
-            .iter()
-            .map(|event| event.kind)
-            .collect::<HashSet<_>>();
-        let predicted_kinds = BENCHMARK_KINDS
-            .into_iter()
-            .filter(|kind| observed.contains(kind))
-            .collect();
+        let report = crate::speech_pipeline::analyze_speech_session_with(
+            case.request.clone(),
+            EvidencePolicy::WithholdAudioOnlySoundRepetitions,
+        )
+        .map_err(|error| BenchmarkError::Detector(error.to_string()))?;
         clips.push(BenchmarkClip {
             id: case.id.clone(),
             speaker_id: case.speaker_id.clone(),
             duration_seconds: report.total_duration_seconds.max(0.001),
             reference_kinds: case.reference_kinds.clone(),
-            predicted_kinds,
+            predicted_kinds: DetectorOutputs::of(&report).baseline_predicted,
+            abstained_kinds: Vec::new(),
             predicted_probabilities: None,
         });
     }
     evaluate_clips(&clips)
+}
+
+/// Both detectors' clip-level outputs from one analysis under
+/// `EvidencePolicy::WithholdAudioOnlySoundRepetitions`. Withholding only partitions the fused
+/// events, so the existing detector (`ReportAll`) predicts every reported or withheld kind, and
+/// the candidate predicts the reported kinds and abstains on the withheld ones.
+struct DetectorOutputs {
+    baseline_predicted: Vec<StutterKind>,
+    candidate_predicted: Vec<StutterKind>,
+    candidate_abstained: Vec<StutterKind>,
+}
+
+impl DetectorOutputs {
+    fn of(report: &AnalysisReport) -> Self {
+        let reported = report
+            .events
+            .iter()
+            .map(|event| event.kind)
+            .collect::<HashSet<_>>();
+        let withheld = report
+            .insufficient_evidence
+            .iter()
+            .map(|possible| possible.candidate.kind)
+            .collect::<HashSet<_>>();
+        let kinds = |set: &dyn Fn(StutterKind) -> bool| {
+            BENCHMARK_KINDS
+                .into_iter()
+                .filter(|kind| set(*kind))
+                .collect::<Vec<_>>()
+        };
+        Self {
+            baseline_predicted: kinds(&|kind| reported.contains(&kind) || withheld.contains(&kind)),
+            candidate_predicted: kinds(&|kind| reported.contains(&kind)),
+            candidate_abstained: kinds(&|kind| {
+                !reported.contains(&kind) && withheld.contains(&kind)
+            }),
+        }
+    }
 }
 
 fn sep28k_votes(row: &Sep28kRow, kind: StutterKind) -> u8 {
@@ -494,6 +551,37 @@ pub(crate) struct CorpusRunOptions {
     pub(crate) vote_threshold: u8,
     pub(crate) limit: Option<usize>,
     pub(crate) detector_revision: Option<DetectorRevision>,
+    /// Candidate to compare with the existing detector on `comparison_partition`.
+    pub(crate) candidate: Option<Candidate>,
+    pub(crate) comparison_partition: ComparisonPartition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Candidate {
+    /// Audio-only sound repetitions are withheld as insufficient evidence (#27).
+    WithholdAudioOnlySoundRepetitions,
+}
+
+impl Candidate {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        (value == "withhold-audio-only-sound-repetitions")
+            .then_some(Self::WithholdAudioOnlySoundRepetitions)
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::WithholdAudioOnlySoundRepetitions => "withholdAudioOnlySoundRepetitions",
+        }
+    }
+}
+
+/// Where a candidate is compared: the training partition while developing it, the protected
+/// held-out partition once per candidate version (promotion criterion 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ComparisonPartition {
+    Train,
+    HeldOut,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -521,6 +609,9 @@ pub(crate) struct CorpusRunReport {
     error_review_scope: &'static str,
     /// Deterministic sample of misclassified clip ids per kind, for manual review (no media).
     error_review: BTreeMap<String, ErrorSample>,
+    /// Paired comparison with a candidate detector, when one was requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate: Option<CandidateComparison>,
     missing_clip_ids: Vec<String>,
     unreadable_clip_ids: Vec<String>,
     limitations: Vec<&'static str>,
@@ -657,8 +748,10 @@ pub(crate) fn run_sep28k_corpus(
     let mut missing = Vec::new();
     let mut unreadable = Vec::new();
     let mut clips = Vec::new();
+    let mut candidate_clips = Vec::new();
     let mut audio_digests = Vec::new();
     let mut challenge_clips = Vec::new();
+    let mut challenge_candidate_clips = Vec::new();
     let mut challenge_digests = Vec::new();
     // The header is checked on its own so an empty or header-only manifest cannot pass.
     let header = labels
@@ -705,9 +798,11 @@ pub(crate) fn run_sep28k_corpus(
             {
                 counts.challenge_rows += 1;
                 match score_clip(&options.clips_dir, entry, stop - start)? {
-                    ClipOutcome::Scored(clip, digest) => {
+                    ClipOutcome::Scored(pair, digest) => {
+                        let (baseline, candidate) = *pair;
                         challenge_digests.push(digest);
-                        challenge_clips.push(*clip);
+                        challenge_clips.push(baseline);
+                        challenge_candidate_clips.push(candidate);
                     }
                     ClipOutcome::Missing(_) | ClipOutcome::Unreadable(_) => {
                         counts.challenge_unavailable += 1
@@ -717,9 +812,11 @@ pub(crate) fn run_sep28k_corpus(
             continue;
         }
         match score_clip(&options.clips_dir, entry, stop - start)? {
-            ClipOutcome::Scored(clip, digest) => {
+            ClipOutcome::Scored(pair, digest) => {
+                let (baseline, candidate) = *pair;
                 audio_digests.push(digest);
-                clips.push(*clip);
+                clips.push(baseline);
+                candidate_clips.push(candidate);
             }
             ClipOutcome::Missing(id) => {
                 counts.missing_audio += 1;
@@ -816,18 +913,65 @@ pub(crate) fn run_sep28k_corpus(
         ("train", error_review_sample(&train_clips))
     };
 
+    let labels_sha256 = sha256_hex(labels.as_bytes());
+    let speaker_mapping_sha256 = speaker_file
+        .as_ref()
+        .map(|(_, text)| sha256_hex(text.as_bytes()));
+    let scored_audio_sha256 = digest_of(&mut audio_digests);
+    let candidate = match options.candidate {
+        None => None,
+        Some(candidate) => {
+            let partition_name = options.comparison_partition;
+            let (baseline_side, candidate_side) = match (&partition, partition_name) {
+                (PartitionSummary::SpeakerExclusive { .. }, ComparisonPartition::Train) => (
+                    held_out_speaker_split(&clips, DEFAULT_EVALUATION_FRACTION, PARTITION_SEED).0,
+                    held_out_speaker_split(
+                        &candidate_clips,
+                        DEFAULT_EVALUATION_FRACTION,
+                        PARTITION_SEED,
+                    )
+                    .0,
+                ),
+                (PartitionSummary::SpeakerExclusive { .. }, ComparisonPartition::HeldOut) => (
+                    held_out_clips.clone(),
+                    held_out_speaker_split(
+                        &candidate_clips,
+                        DEFAULT_EVALUATION_FRACTION,
+                        PARTITION_SEED,
+                    )
+                    .1,
+                ),
+                (PartitionSummary::NotSpeakerExclusive { .. }, _) => {
+                    return Err(BenchmarkError::NoComparisonPartition)
+                }
+            };
+            let inputs = ComparisonInputs {
+                labels_sha256: labels_sha256.clone(),
+                speaker_mapping_sha256: speaker_mapping_sha256.clone(),
+                scored_audio_sha256: scored_audio_sha256.clone(),
+                vote_threshold: options.vote_threshold,
+            };
+            Some(CandidateComparison {
+                candidate: candidate.name(),
+                partition: partition_name,
+                paired: paired_comparison((&inputs, &baseline_side), (&inputs, &candidate_side))?,
+                challenge_candidate: (!challenge_candidate_clips.is_empty())
+                    .then(|| evaluate_clips(&challenge_candidate_clips))
+                    .transpose()?,
+            })
+        }
+    };
+
     missing.sort();
     unreadable.sort();
     Ok(CorpusRunReport {
         schema_version: 1,
         corpus: CorpusIdentity {
             name: "SEP-28k",
-            labels_sha256: sha256_hex(labels.as_bytes()),
+            labels_sha256,
             label_rows: rows.len(),
-            speaker_mapping_sha256: speaker_file
-                .as_ref()
-                .map(|(_, text)| sha256_hex(text.as_bytes())),
-            scored_audio_sha256: digest_of(&mut audio_digests),
+            speaker_mapping_sha256,
+            scored_audio_sha256,
             challenge_audio_sha256: digest_of(&mut challenge_digests),
         },
         configuration: RunConfiguration {
@@ -851,6 +995,7 @@ pub(crate) fn run_sep28k_corpus(
             .transpose()?,
         error_review_scope,
         error_review,
+        candidate,
         missing_clip_ids: missing.into_iter().take(LISTED_ID_LIMIT).collect(),
         unreadable_clip_ids: unreadable.into_iter().take(LISTED_ID_LIMIT).collect(),
         limitations: vec![
@@ -931,6 +1076,342 @@ fn bootstrap_intervals(clips: &[BenchmarkClip]) -> Result<Option<MetricIntervals
     }))
 }
 
+// ---------------------------------------------------------------------------------------------
+// Paired candidate comparison (#76). Both detectors are scored on the same clips; every bootstrap
+// draw resamples the same speakers (or clips) for both, and the intervals are over the
+// differences candidate − baseline.
+// ---------------------------------------------------------------------------------------------
+
+const PAIRED_BOOTSTRAP_SEED: &str = "sep28k-paired-bootstrap-v1";
+
+/// What makes two runs comparable (promotion criterion 4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComparisonInputs {
+    labels_sha256: String,
+    speaker_mapping_sha256: Option<String>,
+    scored_audio_sha256: Option<String>,
+    vote_threshold: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CandidateComparison {
+    candidate: &'static str,
+    partition: ComparisonPartition,
+    paired: PairedComparison,
+    /// The candidate on the robustness challenge set (the existing detector is `challenge`).
+    challenge_candidate: Option<BenchmarkReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PairedComparison {
+    clip_count: usize,
+    resampling_unit: &'static str,
+    resamples: usize,
+    seed: &'static str,
+    baseline: BenchmarkReport,
+    candidate: BenchmarkReport,
+    /// Candidate − baseline, point estimate and paired 95% interval (null with fewer than two
+    /// resampling units, or when no draw defined the metric).
+    macro_f1: Difference,
+    micro_f1: Difference,
+    false_positive_clip_rate: Difference,
+    f1_by_kind: BTreeMap<String, Difference>,
+    /// Over draws in which both detectors predicted the kind at least once.
+    precision_by_kind: BTreeMap<String, Difference>,
+    /// Kinds the candidate abstains on: the recall it gives up and its coverage.
+    coverage_cost: BTreeMap<String, CoverageCost>,
+    promotion: Promotion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+struct Difference {
+    estimate: f64,
+    interval: Option<Interval>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoverageCost {
+    baseline_recall: f64,
+    candidate_recall: f64,
+    coverage: f64,
+    abstained_clips: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Promotion {
+    /// "abstention" for a candidate that abstains on some clip (owner rule of #27, Q3),
+    /// otherwise "macroF1" (STUTTER_BENCH.md criteria 2–3).
+    rule: &'static str,
+    criteria: Vec<Criterion>,
+    promoted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Criterion {
+    name: &'static str,
+    met: bool,
+    detail: String,
+}
+
+fn paired_comparison(
+    (baseline_inputs, baseline): (&ComparisonInputs, &[BenchmarkClip]),
+    (candidate_inputs, candidate): (&ComparisonInputs, &[BenchmarkClip]),
+) -> Result<PairedComparison, BenchmarkError> {
+    if baseline_inputs.labels_sha256 != candidate_inputs.labels_sha256 {
+        return Err(BenchmarkError::IncomparableRuns("the label file"));
+    }
+    if baseline_inputs.speaker_mapping_sha256 != candidate_inputs.speaker_mapping_sha256 {
+        return Err(BenchmarkError::IncomparableRuns("the speaker mapping"));
+    }
+    if baseline_inputs.scored_audio_sha256 != candidate_inputs.scored_audio_sha256 {
+        return Err(BenchmarkError::IncomparableRuns("the scored audio"));
+    }
+    if baseline_inputs.vote_threshold != candidate_inputs.vote_threshold {
+        return Err(BenchmarkError::IncomparableRuns("the vote threshold"));
+    }
+    if baseline.len() != candidate.len()
+        || baseline.iter().zip(candidate).any(|(left, right)| {
+            left.id != right.id
+                || left.speaker_id != right.speaker_id
+                || left.reference_kinds != right.reference_kinds
+        })
+    {
+        return Err(BenchmarkError::IncomparableRuns("the scored clip set"));
+    }
+
+    let baseline_report = evaluate_clips(baseline)?;
+    let candidate_report = evaluate_clips(candidate)?;
+
+    let by_speaker = baseline.iter().all(|clip| clip.speaker_id.is_some());
+    let mut groups: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, clip) in baseline.iter().enumerate() {
+        let key = if by_speaker {
+            clip.speaker_id.as_deref().unwrap_or_default()
+        } else {
+            clip.id.as_str()
+        };
+        groups.entry(key).or_default().push(index);
+    }
+    let groups = groups.into_values().collect::<Vec<_>>();
+
+    let mut macro_f1 = Vec::new();
+    let mut micro_f1 = Vec::new();
+    let mut fluent = Vec::new();
+    let mut f1_by_kind: HashMap<StutterKind, Vec<f64>> = HashMap::new();
+    let mut precision_by_kind: HashMap<StutterKind, Vec<f64>> = HashMap::new();
+    if groups.len() >= 2 {
+        let mut rng = SplitMix64::new(u64::from(stable_hash(PAIRED_BOOTSTRAP_SEED)));
+        let mut left = Vec::with_capacity(baseline.len());
+        let mut right = Vec::with_capacity(candidate.len());
+        for _ in 0..BOOTSTRAP_RESAMPLES {
+            left.clear();
+            right.clear();
+            for _ in 0..groups.len() {
+                for &index in &groups[rng.below(groups.len())] {
+                    left.push(&baseline[index]);
+                    right.push(&candidate[index]);
+                }
+            }
+            let base = evaluate_clip_refs(&left)?;
+            let cand = evaluate_clip_refs(&right)?;
+            macro_f1.push(cand.macro_f1 - base.macro_f1);
+            micro_f1.push(cand.micro_f1 - base.micro_f1);
+            if left.iter().any(|clip| clip.reference_kinds.is_empty()) {
+                fluent.push(cand.false_positive_clip_rate - base.false_positive_clip_rate);
+            }
+            for kind in BENCHMARK_KINDS {
+                if left.iter().any(|clip| clip.reference_kinds.contains(&kind)) {
+                    f1_by_kind
+                        .entry(kind)
+                        .or_default()
+                        .push(cand.by_kind[&kind].f1 - base.by_kind[&kind].f1);
+                }
+                let predicted = |report: &BenchmarkReport| {
+                    let metrics = &report.by_kind[&kind];
+                    metrics.true_positive + metrics.false_positive > 0
+                };
+                if predicted(&base) && predicted(&cand) {
+                    precision_by_kind
+                        .entry(kind)
+                        .or_default()
+                        .push(cand.by_kind[&kind].precision - base.by_kind[&kind].precision);
+                }
+            }
+        }
+    }
+    let interval = |values: Vec<f64>| (!values.is_empty()).then(|| percentile_interval(values));
+    let difference = |estimate: f64, values: Vec<f64>| Difference {
+        estimate,
+        interval: interval(values),
+    };
+    let kind_differences = |mut draws: HashMap<StutterKind, Vec<f64>>,
+                            metric: fn(&KindMetrics) -> f64| {
+        BENCHMARK_KINDS
+            .into_iter()
+            .map(|kind| {
+                (
+                    kind_name(kind).to_owned(),
+                    difference(
+                        metric(&candidate_report.by_kind[&kind])
+                            - metric(&baseline_report.by_kind[&kind]),
+                        draws.remove(&kind).unwrap_or_default(),
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let f1_by_kind = kind_differences(f1_by_kind, |metrics| metrics.f1);
+    let precision_by_kind = kind_differences(precision_by_kind, |metrics| metrics.precision);
+    let macro_f1 = difference(
+        candidate_report.macro_f1 - baseline_report.macro_f1,
+        macro_f1,
+    );
+    let micro_f1 = difference(
+        candidate_report.micro_f1 - baseline_report.micro_f1,
+        micro_f1,
+    );
+    let false_positive_clip_rate = difference(
+        candidate_report.false_positive_clip_rate - baseline_report.false_positive_clip_rate,
+        fluent,
+    );
+    let coverage_cost = BENCHMARK_KINDS
+        .into_iter()
+        .filter(|kind| candidate_report.by_kind[kind].abstained > 0)
+        .map(|kind| {
+            let cand = &candidate_report.by_kind[&kind];
+            (
+                kind_name(kind).to_owned(),
+                CoverageCost {
+                    baseline_recall: baseline_report.by_kind[&kind].recall,
+                    candidate_recall: cand.recall,
+                    coverage: cand.coverage,
+                    abstained_clips: cand.abstained,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let promotion = promotion_decision(
+        &macro_f1,
+        &false_positive_clip_rate,
+        &f1_by_kind,
+        &precision_by_kind,
+        &coverage_cost,
+    );
+    Ok(PairedComparison {
+        clip_count: baseline.len(),
+        resampling_unit: if by_speaker { "speaker" } else { "clip" },
+        resamples: BOOTSTRAP_RESAMPLES,
+        seed: PAIRED_BOOTSTRAP_SEED,
+        baseline: baseline_report,
+        candidate: candidate_report,
+        macro_f1,
+        micro_f1,
+        false_positive_clip_rate,
+        f1_by_kind,
+        precision_by_kind,
+        coverage_cost,
+        promotion,
+    })
+}
+
+/// The interval lies entirely below zero: a regression beyond what the uncertainty allows.
+fn regresses(difference: &Difference) -> bool {
+    difference
+        .interval
+        .is_some_and(|interval| interval.upper < 0.0)
+}
+
+fn describe(difference: &Difference) -> String {
+    match difference.interval {
+        Some(interval) => format!(
+            "{:+.4} (95% interval {:+.4} to {:+.4})",
+            difference.estimate, interval.lower, interval.upper
+        ),
+        None => format!("{:+.4} (no interval)", difference.estimate),
+    }
+}
+
+/// Promotion criteria of STUTTER_BENCH.md. An abstaining candidate is judged by the owner's
+/// rule for #27 (2026-10-25): the fluent false-positive rate drops with a paired interval that
+/// excludes zero, no other kind's precision or F1 regresses beyond its interval, and the recall
+/// given up is reported as a coverage cost. Otherwise the macro-F1 rule applies.
+fn promotion_decision(
+    macro_f1: &Difference,
+    fluent: &Difference,
+    f1_by_kind: &BTreeMap<String, Difference>,
+    precision_by_kind: &BTreeMap<String, Difference>,
+    coverage_cost: &BTreeMap<String, CoverageCost>,
+) -> Promotion {
+    let mut criteria = Vec::new();
+    let abstaining = !coverage_cost.is_empty();
+    if abstaining {
+        criteria.push(Criterion {
+            name: "fluentFalsePositiveRateDrops",
+            met: fluent.estimate < 0.0
+                && fluent.interval.is_some_and(|interval| interval.upper < 0.0),
+            detail: describe(fluent),
+        });
+    } else {
+        criteria.push(Criterion {
+            name: "macroF1Improves",
+            met: macro_f1.estimate > 0.0
+                && macro_f1
+                    .interval
+                    .is_some_and(|interval| interval.lower > 0.0),
+            detail: describe(macro_f1),
+        });
+        criteria.push(Criterion {
+            name: "fluentFalsePositiveRateDoesNotRegress",
+            // A higher fluent false-positive rate is worse.
+            met: !fluent.interval.is_some_and(|interval| interval.lower > 0.0),
+            detail: describe(fluent),
+        });
+    }
+    // Abstained kinds give up recall by design; that is the reported coverage cost, not a
+    // regression. Every other kind must hold its F1 and precision.
+    for (kind, difference) in f1_by_kind {
+        if coverage_cost.contains_key(kind) {
+            continue;
+        }
+        let precision = &precision_by_kind[kind];
+        criteria.push(Criterion {
+            name: "noKindRegresses",
+            met: !regresses(difference) && !regresses(precision),
+            detail: format!(
+                "{kind}: F1 {}; precision {}",
+                describe(difference),
+                describe(precision)
+            ),
+        });
+    }
+    for (kind, cost) in coverage_cost {
+        criteria.push(Criterion {
+            name: "coverageCostReported",
+            met: true,
+            detail: format!(
+                "{kind}: recall {:.4} -> {:.4}, coverage {:.4} ({} clips abstained)",
+                cost.baseline_recall, cost.candidate_recall, cost.coverage, cost.abstained_clips
+            ),
+        });
+    }
+    criteria.push(Criterion {
+        name: "comparableInputs",
+        met: true,
+        detail: "identical label, mapping and scored-audio hashes and vote threshold".to_owned(),
+    });
+    let promoted = criteria.iter().all(|criterion| criterion.met);
+    Promotion {
+        rule: if abstaining { "abstention" } else { "macroF1" },
+        criteria,
+        promoted,
+    }
+}
+
 fn percentile_interval(mut values: Vec<f64>) -> Interval {
     values.sort_by(f64::total_cmp);
     let at = |quantile: f64| values[((values.len() - 1) as f64 * quantile).round() as usize];
@@ -1000,8 +1481,9 @@ impl SplitMix64 {
 }
 
 enum ClipOutcome {
-    /// The scored clip and its `clipId\tsha256(wav)` digest line.
-    Scored(Box<BenchmarkClip>, String),
+    /// The clip scored by the existing detector and by the candidate, and its
+    /// `clipId\tsha256(wav)` digest line.
+    Scored(Box<(BenchmarkClip, BenchmarkClip)>, String),
     Missing(String),
     Unreadable(String),
 }
@@ -1029,23 +1511,22 @@ fn score_clip(
     if (duration_seconds - expected_seconds).abs() > expected_seconds * DURATION_TOLERANCE {
         return Ok(ClipOutcome::Unreadable(entry.id));
     }
-    let report = match crate::speech_pipeline::analyze_speech_session(AnalyzeSpeechRequest {
-        segments: Vec::new(),
-        pauses: Vec::new(),
-        session_started_at: None,
-        samples: Some(samples),
-        sample_rate: Some(sample_rate),
-    }) {
+    let report = match crate::speech_pipeline::analyze_speech_session_with(
+        AnalyzeSpeechRequest {
+            segments: Vec::new(),
+            pauses: Vec::new(),
+            session_started_at: None,
+            samples: Some(samples),
+            sample_rate: Some(sample_rate),
+        },
+        EvidencePolicy::WithholdAudioOnlySoundRepetitions,
+    ) {
         Ok(report) => report,
         // Input validation (too short, non-finite samples): this clip is unusable, not the run.
         Err(SpeechAnalysisError::Invalid(_)) => return Ok(ClipOutcome::Unreadable(entry.id)),
         Err(error) => return Err(BenchmarkError::Detector(error.to_string())),
     };
-    let observed = report
-        .events
-        .iter()
-        .map(|event| event.kind)
-        .collect::<HashSet<_>>();
+    let outputs = DetectorOutputs::of(&report);
     let digest = format!(
         "{}\t{}",
         entry.id,
@@ -1054,20 +1535,21 @@ fn score_clip(
             message: error.to_string(),
         })?)
     );
-    Ok(ClipOutcome::Scored(
-        Box::new(BenchmarkClip {
-            id: entry.id,
-            speaker_id: entry.speaker_id,
-            duration_seconds,
-            reference_kinds: entry.reference_kinds,
-            predicted_kinds: BENCHMARK_KINDS
-                .into_iter()
-                .filter(|kind| observed.contains(kind))
-                .collect(),
-            predicted_probabilities: None,
-        }),
-        digest,
-    ))
+    let baseline = BenchmarkClip {
+        id: entry.id,
+        speaker_id: entry.speaker_id,
+        duration_seconds,
+        reference_kinds: entry.reference_kinds,
+        predicted_kinds: outputs.baseline_predicted,
+        abstained_kinds: Vec::new(),
+        predicted_probabilities: None,
+    };
+    let candidate = BenchmarkClip {
+        predicted_kinds: outputs.candidate_predicted,
+        abstained_kinds: outputs.candidate_abstained,
+        ..baseline.clone()
+    };
+    Ok(ClipOutcome::Scored(Box::new((baseline, candidate)), digest))
 }
 
 /// Every applicable reason. Quality flags are multi-label; a clip with no stuttering kind at the
@@ -1339,6 +1821,7 @@ mod tests {
             duration_seconds: 3.0,
             reference_kinds,
             predicted_kinds,
+            abstained_kinds: Vec::new(),
             predicted_probabilities: None,
         }
     }
@@ -1613,6 +2096,8 @@ mod tests {
                 vote_threshold: 2,
                 limit: None,
                 detector_revision: None,
+                candidate: None,
+                comparison_partition: ComparisonPartition::Train,
             }
         }
     }
@@ -2193,5 +2678,189 @@ mod tests {
         // The only fluent clip is a false positive, so every defined draw has rate 1.
         assert_eq!(fluent.lower, 1.0);
         assert_eq!(fluent.upper, 1.0);
+    }
+
+    fn inputs() -> ComparisonInputs {
+        ComparisonInputs {
+            labels_sha256: "labels".to_owned(),
+            speaker_mapping_sha256: Some("mapping".to_owned()),
+            scored_audio_sha256: Some("audio".to_owned()),
+            vote_threshold: 2,
+        }
+    }
+
+    /// Ten speakers; the candidate abstains on sound repetition wherever the baseline flagged it.
+    fn paired_clips() -> (Vec<BenchmarkClip>, Vec<BenchmarkClip>) {
+        let mut baseline = Vec::new();
+        for index in 0..40 {
+            let speaker = format!("s{}", index % 10);
+            let reference = match index % 4 {
+                0 => vec![StutterKind::SoundRepetition],
+                1 => vec![StutterKind::Block],
+                _ => vec![],
+            };
+            let predicted = match index % 4 {
+                1 => vec![StutterKind::Block],
+                // Sound repetition fires on most fluent clips and on half the true ones.
+                2 | 3 => vec![StutterKind::SoundRepetition],
+                _ if index % 8 == 0 => vec![StutterKind::SoundRepetition],
+                _ => vec![],
+            };
+            baseline.push(clip(
+                &format!("c{index}"),
+                Some(&speaker),
+                reference,
+                predicted,
+            ));
+        }
+        let candidate = baseline
+            .iter()
+            .map(|clip| {
+                let mut clip = clip.clone();
+                if let Some(at) = clip
+                    .predicted_kinds
+                    .iter()
+                    .position(|kind| *kind == StutterKind::SoundRepetition)
+                {
+                    clip.predicted_kinds.remove(at);
+                    clip.abstained_kinds.push(StutterKind::SoundRepetition);
+                }
+                clip
+            })
+            .collect();
+        (baseline, candidate)
+    }
+
+    #[test]
+    fn abstentions_are_misses_never_fluent_negatives_or_false_positives() {
+        let mut positive = clip("a", None, vec![StutterKind::SoundRepetition], vec![]);
+        positive.abstained_kinds = vec![StutterKind::SoundRepetition];
+        let mut fluent = clip("b", None, vec![], vec![]);
+        fluent.abstained_kinds = vec![StutterKind::SoundRepetition];
+        let report = evaluate_clips(&[positive, fluent]).unwrap();
+        let sound = &report.by_kind[&StutterKind::SoundRepetition];
+
+        assert_eq!(sound.false_negative, 1);
+        assert_eq!(sound.false_positive, 0);
+        assert_eq!(sound.true_negative, 0);
+        assert_eq!(sound.abstained, 2);
+        assert_eq!(sound.coverage, 0.0);
+        assert_eq!(report.false_positive_clip_rate, 0.0);
+        assert_eq!(report.by_kind[&StutterKind::Block].coverage, 1.0);
+    }
+
+    #[test]
+    fn paired_comparison_is_deterministic_and_judges_an_abstaining_candidate() {
+        let (baseline, candidate) = paired_clips();
+        let first = paired_comparison((&inputs(), &baseline), (&inputs(), &candidate)).unwrap();
+        let second = paired_comparison((&inputs(), &baseline), (&inputs(), &candidate)).unwrap();
+        assert_eq!(first, second);
+
+        assert_eq!(first.resampling_unit, "speaker");
+        assert!(first.false_positive_clip_rate.estimate < 0.0);
+        let fluent = first.false_positive_clip_rate.interval.unwrap();
+        assert!(fluent.upper < 0.0);
+        // Unchanged kinds have an exactly zero paired difference.
+        assert_eq!(
+            first.f1_by_kind["block"].interval,
+            Some(Interval {
+                lower: 0.0,
+                upper: 0.0
+            })
+        );
+        let cost = &first.coverage_cost["soundRepetition"];
+        assert_eq!(cost.candidate_recall, 0.0);
+        assert!(cost.baseline_recall > 0.0);
+        assert!(cost.coverage < 1.0);
+        assert_eq!(first.promotion.rule, "abstention");
+        assert!(first.promotion.promoted, "{:?}", first.promotion.criteria);
+        assert!(first
+            .promotion
+            .criteria
+            .iter()
+            .any(|criterion| criterion.name == "coverageCostReported"));
+    }
+
+    #[test]
+    fn a_candidate_that_regresses_another_kind_is_not_promoted() {
+        let (baseline, mut candidate) = paired_clips();
+        for clip in &mut candidate {
+            clip.predicted_kinds
+                .retain(|kind| *kind != StutterKind::Block);
+        }
+        let comparison =
+            paired_comparison((&inputs(), &baseline), (&inputs(), &candidate)).unwrap();
+        assert!(!comparison.promotion.promoted);
+        assert!(comparison.promotion.criteria.iter().any(|criterion| {
+            criterion.name == "noKindRegresses"
+                && !criterion.met
+                && criterion.detail.starts_with("block")
+        }));
+    }
+
+    #[test]
+    fn a_non_abstaining_candidate_uses_the_macro_f1_rule() {
+        let (baseline, _) = paired_clips();
+        let comparison = paired_comparison((&inputs(), &baseline), (&inputs(), &baseline)).unwrap();
+        assert_eq!(comparison.promotion.rule, "macroF1");
+        assert!(!comparison.promotion.promoted);
+    }
+
+    #[test]
+    fn comparisons_with_mismatched_corpus_identity_fail() {
+        let (baseline, candidate) = paired_clips();
+        let mismatches: [(&str, fn(&mut ComparisonInputs)); 4] = [
+            ("the label file", |inputs| {
+                inputs.labels_sha256 = "other".to_owned()
+            }),
+            ("the speaker mapping", |inputs| {
+                inputs.speaker_mapping_sha256 = None
+            }),
+            ("the scored audio", |inputs| {
+                inputs.scored_audio_sha256 = Some("other".to_owned())
+            }),
+            ("the vote threshold", |inputs| inputs.vote_threshold = 3),
+        ];
+        for (field, change) in mismatches {
+            let mut other = inputs();
+            change(&mut other);
+            let error =
+                paired_comparison((&inputs(), &baseline), (&other, &candidate)).unwrap_err();
+            assert!(
+                matches!(error, BenchmarkError::IncomparableRuns(name) if name == field),
+                "{field}: {error}"
+            );
+        }
+        let error =
+            paired_comparison((&inputs(), &baseline), (&inputs(), &candidate[1..])).unwrap_err();
+        assert!(matches!(
+            error,
+            BenchmarkError::IncomparableRuns("the scored clip set")
+        ));
+    }
+
+    #[test]
+    fn corpus_runner_compares_a_candidate_only_on_a_speaker_exclusive_partition() {
+        let (corpus, labels) = standard_fixture("candidate");
+        let mut options = corpus.options(labels.clone(), None);
+        options.candidate = Some(Candidate::WithholdAudioOnlySoundRepetitions);
+        assert!(matches!(
+            run_sep28k_corpus(&options),
+            Err(BenchmarkError::NoComparisonPartition)
+        ));
+
+        let speakers = corpus.speakers(&[("show:1:1", "a"), ("show:1:2", "b")]);
+        let mut options = corpus.options(labels, Some(speakers));
+        options.candidate = Some(Candidate::WithholdAudioOnlySoundRepetitions);
+        let train = run_sep28k_corpus(&options).unwrap();
+        let comparison = train.candidate.as_ref().unwrap();
+        assert_eq!(comparison.partition, ComparisonPartition::Train);
+        assert_eq!(comparison.paired.clip_count, 1);
+        options.comparison_partition = ComparisonPartition::HeldOut;
+        let held_out = run_sep28k_corpus(&options).unwrap();
+        assert_eq!(
+            held_out.candidate.as_ref().unwrap().paired.clip_count,
+            held_out.held_out.as_ref().unwrap().clip_count
+        );
     }
 }
