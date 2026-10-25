@@ -18,6 +18,7 @@ import {
   observationFingerprint,
   reanalyzeSession,
 } from "./sessions";
+import { adjudicationRevision } from "./validation";
 
 const segments = [
   {
@@ -132,6 +133,39 @@ describe("annotation exchange", () => {
       raters: [raterA],
       audioSeconds: null,
     });
+  });
+
+  test("an adjudication keeps its decisions, qualification and candidate labels in transit", () => {
+    let record = declareValidation(origin, {
+      declaredAt: "2026-10-17T09:45:00.000Z",
+      raters: [raterA, raterB],
+    });
+    record = annotateSession(record, revision("rA", raterA));
+    const prolongation = { kind: "prolongation" as const, startSeconds: 0.2, endSeconds: 0.7 };
+    record = annotateSession(
+      record,
+      revision("rB", raterB, { events: [{ ...prolongation, certainty: "possible" as const }] }),
+    );
+    record = annotateSession(
+      record,
+      adjudicationRevision(record, {
+        id: "adj",
+        createdAt: "2026-10-17T10:40:00.000Z",
+        author: { role: "clinician", id: "C" },
+        qualification: "SLT, stuttering specialist",
+        decisions: [{ item: "0/0", outcome: "uncertain" }],
+      }),
+    );
+    const sent = roundtrip(buildAnnotationExchange(record, options));
+    const adjudication = sent.revisions.find((item) => item.id === "adj")!;
+    expect(adjudication.adjudication?.qualification).toBe("SLT, stuttering specialist");
+    expect(adjudication.events[0].candidateLabels).toEqual(["block", "prolongation"]);
+    expect(mergeAnnotationExchange(record, sent)).toMatchObject({ added: 0, alreadyPresent: 3 });
+    const tampered = JSON.parse(JSON.stringify(sent));
+    tampered.revisions[2].adjudication.decisions[0].outcome = "first";
+    expect(() => mergeAnnotationExchange(record, parseAnnotationExchange(tampered))).toThrow(
+      "differs from the one already here",
+    );
   });
 
   test("rejects a different transcript, a changed revision, conflicting raters and tampered rights", () => {

@@ -34,14 +34,6 @@ export type AnnotationSaveRequest = {
   status: "draft" | "accepted";
   /** Annotated without seeing any analysis (blind review). */
   blind: boolean;
-  /** For an adjudication: the two declared raters' revisions it resolves. */
-  adjudicates?: [string, string];
-};
-
-export type AdjudicationTarget = {
-  adjudicates: [string, string];
-  /** Agreed spans once plus every disputed span of both raters. */
-  startEvents: AnnotatedEvent[];
 };
 
 const KIND_LABELS: Record<AnnotationLabel, string> = {
@@ -72,7 +64,6 @@ export function AnnotationWorkbench({
   session,
   audio,
   blind = false,
-  adjudication = null,
   disabled,
   onSave,
 }: {
@@ -81,8 +72,6 @@ export function AnnotationWorkbench({
   audio: KeptSessionAudio | null;
   /** Blind review: the rater has not been shown this session's analysis. */
   blind?: boolean;
-  /** Adjudication of a declared two-rater validation; null for an ordinary annotation. */
-  adjudication?: AdjudicationTarget | null;
   disabled: boolean;
   onSave: (request: AnnotationSaveRequest) => Promise<boolean>;
 }) {
@@ -93,14 +82,7 @@ export function AnnotationWorkbench({
     [role, raterId],
   );
   const baseline = currentRevisionBy(session, author);
-  // An adjudicator continues their own adjudication of these ratings, else starts from both.
-  const startEvents = (rater: AnnotationRater) => {
-    const own = currentRevisionBy(session, rater);
-    if (!adjudication) return own?.events;
-    return own?.adjudicates?.join() === adjudication.adjudicates.join()
-      ? own.events
-      : adjudication.startEvents;
-  };
+  const startEvents = (rater: AnnotationRater) => currentRevisionBy(session, rater)?.events;
   const [editor, setEditor] = useState(() => createAnnotationEditor(startEvents(author)));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -123,10 +105,7 @@ export function AnnotationWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [author, session]);
 
-  // An adjudication is unsaved until this adjudicator saved one for exactly these ratings.
-  const dirty =
-    !sameEvents(editor.events, baseline?.events ?? []) ||
-    (adjudication !== null && baseline?.adjudicates?.join() !== adjudication.adjudicates.join());
+  const dirty = !sameEvents(editor.events, baseline?.events ?? []);
   const otherRevisions = session.annotations.filter(
     (revision) => !sameRater(revision.author, author),
   ).length;
@@ -156,15 +135,7 @@ export function AnnotationWorkbench({
     setSaving(true);
     try {
       // On failure the edits stay on screen, so nothing typed is lost.
-      if (
-        await onSave({
-          author,
-          events: editor.events,
-          status,
-          blind,
-          ...(adjudication ? { adjudicates: adjudication.adjudicates } : {}),
-        })
-      ) {
+      if (await onSave({ author, events: editor.events, status, blind })) {
         setEditor(createAnnotationEditor(editor.events));
       }
     } finally {
@@ -188,15 +159,8 @@ export function AnnotationWorkbench({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="annotation-heading" className="m-0 text-lg">
-            {adjudication ? "Adjudicate validation" : "Annotate events"}
+            Annotate events
           </h2>
-          {adjudication && (
-            <p className="m-0 text-sm">
-              Starts from the spans both raters agreed on plus every disputed span of each. Keep,
-              change or delete them; the raters' own revisions stay unchanged. The adjudicator must
-              be neither rater.
-            </p>
-          )}
           <p className={cx("m-0 text-sm", mutedTextClass)}>
             Times are seconds from the session start. Arrow Up/Down nudges a boundary by 10 ms
             (Shift: 100 ms); Ctrl+Z / Ctrl+Shift+Z undo and redo. Saving adds a revision; earlier

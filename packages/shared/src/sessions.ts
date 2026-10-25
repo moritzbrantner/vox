@@ -122,6 +122,31 @@ export type AnnotatedEvent = {
   /** "possible" for uncertain labels, e.g. a silent block the audio alone cannot establish. */
   certainty: "certain" | "possible";
   note?: string;
+  /**
+   * Set by an "uncertain" adjudication of a label disagreement: both raters' labels, rater 1's
+   * first. `kind` is the first of them; the label is not settled.
+   */
+  candidateLabels?: [AnnotationLabel, AnnotationLabel];
+};
+
+/** What an adjudicator decided for one referred disagreement (docs/annotation-handbook.md). */
+export type AdjudicationOutcome = "first" | "second" | "adjusted" | "noEvent" | "uncertain";
+
+export type AdjudicationDecision = {
+  /** The referred item, as `SpanDisagreement.key` names it for the cited ratings. */
+  item: string;
+  outcome: AdjudicationOutcome;
+  /** The adjudicator's own span, only for "adjusted". */
+  event?: AnnotatedEvent;
+};
+
+export type AdjudicationRecord = {
+  /** The adjudicator's own statement of their qualification, e.g. "SLT, stuttering specialist". */
+  qualification: string;
+  /** Agreement rule that decided which items were accepted automatically and which referred. */
+  rule: string;
+  /** One decision per referred item; automatically accepted agreements need none. */
+  decisions: AdjudicationDecision[];
 };
 
 export type AnnotationRevision = {
@@ -141,6 +166,8 @@ export type AnnotationRevision = {
    * neither rater, and the rater revisions stay unchanged.
    */
   adjudicates?: [string, string];
+  /** Per-item decisions of a selective adjudication; absent on adjudications saved before 0.3. */
+  adjudication?: AdjudicationRecord;
 };
 
 /** Version-1 records: what the web app stored before this schema. */
@@ -273,6 +300,10 @@ export function annotateSession(
     if (!sameRater(replaced.author, revision.author)) {
       throw new Error(`Annotation revision ${revision.supersedes} belongs to another rater.`);
     }
+    // An adjudication is revised only by another adjudication, never by a plain annotation.
+    if (replaced.adjudicates && !revision.adjudicates) {
+      throw new Error("Revise an adjudication in two-rater validation, not as an annotation.");
+    }
   }
   if (revision.adjudicates) {
     const raters = record.validation?.raters;
@@ -282,6 +313,12 @@ export function annotateSession(
     if (raters.some((rater) => sameRater(rater, revision.author))) {
       throw new Error("A rater cannot adjudicate their own validation.");
     }
+    if (revision.author.role !== "clinician" || !revision.author.id?.trim()) {
+      throw new Error("An adjudicator is a named person in the Clinician role.");
+    }
+    if (!revision.adjudication?.qualification.trim()) {
+      throw new Error("An adjudication needs the adjudicator's qualification statement.");
+    }
     revision.adjudicates.forEach((id, index) => {
       const rated = record.annotations.find((existing) => existing.id === id);
       if (!rated || !sameRater(rated.author, raters[index])) {
@@ -290,6 +327,9 @@ export function annotateSession(
         );
       }
     });
+  }
+  if (revision.adjudication && !revision.adjudicates) {
+    throw new Error("Adjudication decisions need the two ratings they resolve.");
   }
   const runIds = sessionAnalysisRuns(record).map((run) => run.id);
   if (revision.basedOnRunId !== null && !runIds.includes(revision.basedOnRunId)) {

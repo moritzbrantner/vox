@@ -6,6 +6,8 @@
 import type { CaptureInterval } from "./capture";
 import type { AnalysisReport, PauseSpan, TranscriptSegment } from "./index";
 import {
+  type AdjudicationDecision,
+  type AdjudicationRecord,
   type AnnotatedEvent,
   type AnnotationRater,
   type AnnotationRevision,
@@ -297,17 +299,33 @@ function canonicalRevision(item: AnnotationRevision) {
     author: { role: item.author.role, id: item.author.id ?? null },
     basedOnRunId: item.basedOnRunId,
     inputId: item.inputId,
-    events: item.events.map((event) => [
-      event.kind,
-      event.startSeconds,
-      event.endSeconds,
-      event.certainty,
-      event.note ?? null,
-    ]),
+    events: item.events.map(canonicalEvent),
     status: item.status,
     supersedes: item.supersedes,
     adjudicates: item.adjudicates ?? null,
+    adjudication: item.adjudication
+      ? {
+          qualification: item.adjudication.qualification,
+          rule: item.adjudication.rule,
+          decisions: item.adjudication.decisions.map((decision) => [
+            decision.item,
+            decision.outcome,
+            decision.event ? canonicalEvent(decision.event) : null,
+          ]),
+        }
+      : null,
   };
+}
+
+function canonicalEvent(event: AnnotatedEvent) {
+  return [
+    event.kind,
+    event.startSeconds,
+    event.endSeconds,
+    event.certainty,
+    event.note ?? null,
+    event.candidateLabels ?? null,
+  ];
 }
 
 const LABELS = new Set([
@@ -341,6 +359,10 @@ function revision(value: unknown): AnnotationRevision {
         ]);
   if (adjudicates && adjudicates.length !== 2)
     throw new Error("An adjudication must cite two revisions.");
+  const adjudication =
+    item.adjudication === undefined ? undefined : adjudicationRecord(item.adjudication);
+  if (adjudication && !adjudicates)
+    throw new Error("Adjudication decisions need the two ratings they resolve.");
   return {
     id: item.id as string,
     createdAt: item.createdAt as string,
@@ -351,6 +373,29 @@ function revision(value: unknown): AnnotationRevision {
     status: item.status as AnnotationRevision["status"],
     supersedes: item.supersedes as string | null,
     ...(adjudicates ? { adjudicates } : {}),
+    ...(adjudication ? { adjudication } : {}),
+  };
+}
+
+const OUTCOMES = new Set(["first", "second", "adjusted", "noEvent", "uncertain"]);
+
+function adjudicationRecord(value: unknown): AdjudicationRecord {
+  const item = object(value, "adjudication");
+  return {
+    qualification: text(item.qualification, "adjudication qualification"),
+    rule: text(item.rule, "adjudication rule"),
+    decisions: array(item.decisions, "adjudication decisions").map((entry) => {
+      const decision = object(entry, "adjudication decision");
+      if (!OUTCOMES.has(decision.outcome as string))
+        throw new Error("An adjudication decision has an unknown outcome.");
+      if ((decision.outcome === "adjusted") !== (decision.event !== undefined))
+        throw new Error("Only an adjusted decision carries its own span.");
+      return {
+        item: text(decision.item, "adjudication item"),
+        outcome: decision.outcome as AdjudicationDecision["outcome"],
+        ...(decision.event !== undefined ? { event: event(decision.event) } : {}),
+      };
+    }),
   };
 }
 
@@ -364,12 +409,20 @@ function event(value: unknown): AnnotatedEvent {
   if (item.certainty !== "certain" && item.certainty !== "possible")
     throw new Error("An event has an unknown certainty.");
   if (item.note !== undefined) text(item.note, "event note");
+  let candidateLabels: AnnotatedEvent["candidateLabels"];
+  if (item.candidateLabels !== undefined) {
+    const labels = array(item.candidateLabels, "event candidateLabels");
+    if (labels.length !== 2 || !labels.every((label) => LABELS.has(label as string)))
+      throw new Error("An event's candidate labels must be two known labels.");
+    candidateLabels = labels as [AnnotatedEvent["kind"], AnnotatedEvent["kind"]];
+  }
   return {
     kind: item.kind as AnnotatedEvent["kind"],
     startSeconds: item.startSeconds as number,
     endSeconds: item.endSeconds as number,
     certainty: item.certainty as AnnotatedEvent["certainty"],
     ...(item.note !== undefined ? { note: item.note as string } : {}),
+    ...(candidateLabels ? { candidateLabels } : {}),
   };
 }
 

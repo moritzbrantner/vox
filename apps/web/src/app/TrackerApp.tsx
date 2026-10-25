@@ -12,7 +12,7 @@ import {
   createSessionRecord,
   isAnalysisVerified,
   isReplayable,
-  adjudicationStart,
+  adjudicationRevision,
   type AnnotationRater,
   annotateSession,
   currentRevisionBy,
@@ -25,7 +25,6 @@ import {
   mergeAnnotationExchange,
   parseAnnotationExchange,
   reviewCopyFromExchange,
-  sessionValidation,
   reanalyzeSession,
   fallbackAnalyze as sharedFallbackAnalyze,
   type ModelPreparationFailure,
@@ -45,7 +44,7 @@ import { measureCaptureOnDevice, preloadCaptureKernel } from "../audio/captureKe
 import { isScoreWithheld, withCaptureQuality } from "../audio/captureQuality";
 import { type AnnotationSaveRequest, AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { BlindReview } from "../components/BlindReview";
-import { ValidationPanel } from "../components/ValidationPanel";
+import { type AdjudicationRequest, ValidationPanel } from "../components/ValidationPanel";
 import { type ContextTags, SessionComparisonPanel } from "../components/SessionComparisonPanel";
 import { AnnotationExchangePanel } from "../components/AnnotationExchangePanel";
 import { buttonClass } from "../components/styles";
@@ -311,8 +310,6 @@ export function App() {
   const [keepAudio, setKeepAudio] = useState(false);
   // Blind review (vox#23): only the workbench of a neutrally named session is shown.
   const [blindReview, setBlindReview] = useState<{ sessionId: string | null } | null>(null);
-  // Session whose two-rater validation is being adjudicated in the workbench.
-  const [adjudicatingId, setAdjudicatingId] = useState<string | null>(null);
   const reanalyzingRef = useRef(new Set<string>());
   const [reanalyzingSessionIds, setReanalyzingSessionIds] = useState<string[]>([]);
   const viewedSessionRef = useRef<SavedSession | null>(null);
@@ -1637,9 +1634,26 @@ export function App() {
           events: request.events,
           status: request.status,
           supersedes: currentRevisionBy(latest, request.author)?.id ?? null,
-          ...(request.adjudicates ? { adjudicates: request.adjudicates } : {}),
         }),
-      request.adjudicates ? "adjudication" : "annotation",
+      "annotation",
+    );
+  }
+
+  // Records the adjudicator's per-item decisions for the session's current ratings; both rater
+  // revisions stay unchanged.
+  function saveAdjudication(sessionId: string, request: AdjudicationRequest) {
+    return updateStoredSession(
+      sessionId,
+      (latest) =>
+        annotateSession(
+          latest,
+          adjudicationRevision(latest, {
+            id: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            ...request,
+          }),
+        ),
+      "adjudication",
     );
   }
 
@@ -2735,11 +2749,8 @@ export function App() {
       )}
       {viewedSession && (
         <AnnotationWorkbench
-          key={`${viewedSession.id}:${adjudicatingId === viewedSession.id ? "adjudicate" : "annotate"}`}
+          key={viewedSession.id}
           session={viewedSession}
-          adjudication={
-            adjudicatingId === viewedSession.id ? adjudicationTarget(viewedSession) : null
-          }
           audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
           disabled={captureInProgress}
           onSave={(request) => saveAnnotation(viewedSession.id, request)}
@@ -2750,7 +2761,7 @@ export function App() {
         session={viewedSession}
         disabled={captureInProgress}
         onDeclare={declareSessionValidation}
-        onAdjudicate={setAdjudicatingId}
+        onAdjudicate={saveAdjudication}
       />
       <SessionComparisonPanel
         sessions={ownSessions(sessions)}
@@ -2789,16 +2800,6 @@ async function analyze(request: {
 }
 
 /** The desktop command reports its detector version; older desktop builds leave it unknown. */
-function adjudicationTarget(session: SavedSession) {
-  const validation = sessionValidation(session);
-  const [first, second] = validation?.ratings ?? [null, null];
-  if (!validation?.comparison || !first || !second) return null;
-  return {
-    adjudicates: [first.id, second.id] as [string, string],
-    startEvents: adjudicationStart(validation.comparison),
-  };
-}
-
 export function desktopAnalyzer(version: string | undefined): AnalyzerIdentity {
   return {
     producer: "desktopNative",

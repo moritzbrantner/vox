@@ -171,7 +171,36 @@ function isAnnotationRevision(value: unknown): value is Record<string, unknown> 
     (value.adjudicates === undefined ||
       (Array.isArray(value.adjudicates) &&
         value.adjudicates.length === 2 &&
-        value.adjudicates.every((id) => typeof id === "string" && id.length > 0)))
+        value.adjudicates.every((id) => typeof id === "string" && id.length > 0))) &&
+    (value.adjudication === undefined ||
+      (value.adjudicates !== undefined && isAdjudicationRecord(value.adjudication)))
+  );
+}
+
+function isAnnotationLabel(value: unknown) {
+  return (
+    isStutterKind(value) || value === "noSpeech" || value === "overlap" || value === "unusable"
+  );
+}
+
+function isAdjudicationRecord(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.qualification === "string" &&
+    value.qualification.length > 0 &&
+    typeof value.rule === "string" &&
+    Array.isArray(value.decisions) &&
+    value.decisions.every(
+      (decision) =>
+        isRecord(decision) &&
+        typeof decision.item === "string" &&
+        ["first", "second", "adjusted", "noEvent", "uncertain"].includes(
+          decision.outcome as string,
+        ) &&
+        (decision.outcome === "adjusted"
+          ? isAnnotatedEvent(decision.event)
+          : decision.event === undefined),
+    )
   );
 }
 
@@ -212,7 +241,11 @@ function isAnnotatedEvent(value: unknown) {
     isFiniteNumber(value.endSeconds) &&
     value.endSeconds >= value.startSeconds &&
     (value.certainty === "certain" || value.certainty === "possible") &&
-    isOptionalString(value.note)
+    isOptionalString(value.note) &&
+    (value.candidateLabels === undefined ||
+      (Array.isArray(value.candidateLabels) &&
+        value.candidateLabels.length === 2 &&
+        value.candidateLabels.every(isAnnotationLabel)))
   );
 }
 
