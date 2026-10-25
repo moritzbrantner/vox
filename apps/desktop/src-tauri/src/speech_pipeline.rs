@@ -137,7 +137,9 @@ pub(crate) fn onset_id(index: usize) -> String {
 #[serde(rename_all = "camelCase")]
 pub enum Support {
     Supported,
-    /// Produced by a simpler method; not comparable with a supported output.
+    /// Produced by a simpler method; not comparable with a supported output. Only the shared
+    /// fallback reports it; the variant keeps the wire vocabulary complete.
+    #[allow(dead_code)]
     Reduced,
     Unsupported,
 }
