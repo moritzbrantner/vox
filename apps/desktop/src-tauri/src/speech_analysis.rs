@@ -50,6 +50,16 @@ pub struct TranscriptSegmentInput {
     pub confidence: Option<f32>,
     pub speaker_score: Option<f32>,
     pub is_final: bool,
+    /// `Some(Unaligned)` when the recognizer gave no usable timing: the times only order the
+    /// segment, so no prolongation timing is derived from it (vox#26).
+    #[serde(default)]
+    pub alignment: Option<SegmentAlignment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SegmentAlignment {
+    Unaligned,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -440,7 +450,17 @@ pub(crate) fn analyze_with_evidence(
         speaking_duration_seconds += (segment.end_seconds - segment.start_seconds).max(0.0);
         let segment_tokens = timed_tokens(segment_index, segment);
         events.extend(detect_repetitions(&segment_tokens));
-        events.extend(detect_prolongations(&segment_tokens));
+        let prolongations = detect_prolongations(&segment_tokens);
+        if segment.alignment == Some(SegmentAlignment::Unaligned) {
+            // No timing to place a prolongation in; none is invented.
+            events.extend(
+                prolongations
+                    .into_iter()
+                    .filter(|event| event.kind != StutterKind::Prolongation),
+            );
+        } else {
+            events.extend(prolongations);
+        }
         events.extend(detect_fillers(&segment_tokens));
         tokens.extend(segment_tokens);
     }
@@ -1844,6 +1864,7 @@ mod tests {
                 confidence: None,
                 speaker_score: None,
                 is_final: true,
+                alignment: None,
             }],
             pauses: Vec::new(),
             session_started_at: None,
@@ -1864,6 +1885,35 @@ mod tests {
         assert_eq!(report.chunks.len(), 1);
         assert_eq!(report.chunks[0].word_count, 6);
         assert!(report.speech_stats.words_per_minute > 0.0);
+    }
+
+    #[test]
+    fn unaligned_segments_get_no_prolongation_timing() {
+        let report = analyze_speech_session_impl(AnalyzeSpeechRequest {
+            segments: vec![TranscriptSegmentInput {
+                text: "I I want to sssstart now".to_string(),
+                start_seconds: 0.0,
+                end_seconds: 3.0,
+                confidence: None,
+                speaker_score: None,
+                is_final: true,
+                alignment: Some(SegmentAlignment::Unaligned),
+            }],
+            pauses: Vec::new(),
+            session_started_at: None,
+            samples: None,
+            sample_rate: None,
+        })
+        .unwrap();
+
+        assert!(report
+            .events
+            .iter()
+            .any(|event| event.kind == StutterKind::WordRepetition));
+        assert!(!report
+            .events
+            .iter()
+            .any(|event| event.kind == StutterKind::Prolongation));
     }
 
     #[test]
@@ -1905,6 +1955,7 @@ mod tests {
                 confidence: None,
                 speaker_score: None,
                 is_final: true,
+                alignment: None,
             }],
             pauses: Vec::new(),
             session_started_at: None,
@@ -2023,6 +2074,7 @@ mod tests {
                 confidence: None,
                 speaker_score: None,
                 is_final: true,
+                alignment: None,
             }],
             pauses: Vec::new(),
             session_started_at: None,
@@ -2051,6 +2103,7 @@ mod tests {
                 confidence: None,
                 speaker_score: None,
                 is_final: true,
+                alignment: None,
             }],
             pauses: Vec::new(),
             session_started_at: None,
@@ -2118,6 +2171,7 @@ mod tests {
                 confidence: None,
                 speaker_score: None,
                 is_final: true,
+                alignment: None,
             }],
             pauses: Vec::new(),
             session_started_at: None,

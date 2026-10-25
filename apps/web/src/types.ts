@@ -9,6 +9,8 @@ export type TranscriptSegment = {
   speakerLabel?: string;
   speakerScore?: number;
   isFinal: boolean;
+  /** See the shared `TranscriptSegment`: unaligned times only order the segment. */
+  alignment?: "unaligned";
 };
 
 export type PauseSpan = {

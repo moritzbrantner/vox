@@ -199,6 +199,7 @@ function validateSegment(value: unknown) {
     speakerLabel: optionalTrimmedString(body.speakerLabel, "speakerLabel"),
     speakerScore: optionalFiniteNumber(body.speakerScore, "speakerScore"),
     isFinal: body.isFinal === true,
+    ...(body.alignment === "unaligned" ? { alignment: "unaligned" as const } : {}),
   };
 }
 

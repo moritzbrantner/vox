@@ -19,6 +19,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import type { KeptSessionAudio } from "../storage/sessionAudio";
 import type { SavedSession } from "../types";
 import { ReviewAudioPanel, useReviewAudio } from "./ReviewAudio";
+import { TIMING_NOT_ALIGNED } from "./TranscriptText";
 import {
   buttonClass,
   controlClass,
@@ -221,20 +222,25 @@ export function AnnotationWorkbench({
             <ol className="m-0 flex list-none flex-col gap-1 p-0">
               {session.segments.map((segment, index) => (
                 <li key={index} className="flex items-center gap-2 text-sm">
-                  <button
-                    type="button"
-                    className={buttonClass}
-                    title="Use this segment's start and end for a new event"
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        startSeconds: segment.startSeconds,
-                        endSeconds: segment.endSeconds,
-                      })
-                    }
-                  >
-                    {formatSeconds(segment.startSeconds)}–{formatSeconds(segment.endSeconds)}
-                  </button>
+                  {segment.alignment === "unaligned" ? (
+                    // No timing to offer: an annotation span is never taken from an estimate.
+                    <span className={cx("text-xs", mutedTextClass)}>{TIMING_NOT_ALIGNED}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      title="Use this segment's start and end for a new event"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          startSeconds: segment.startSeconds,
+                          endSeconds: segment.endSeconds,
+                        })
+                      }
+                    >
+                      {formatSeconds(segment.startSeconds)}–{formatSeconds(segment.endSeconds)}
+                    </button>
+                  )}
                   <span>{segment.text}</span>
                 </li>
               ))}
