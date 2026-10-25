@@ -24,6 +24,7 @@ import type {
   AnalysisReport,
   BlockerStats,
   ChunkAnalysis,
+  PossibleEvent,
   SavedSession,
   SpeakerIntentPrediction,
   TranscriptSegment,
@@ -193,8 +194,62 @@ function EventsPanel({ report }: { report: AnalysisReport }) {
             </div>
           ))
         )}
+        {!withheld && <PossibleEventsList possible={report.insufficientEvidence ?? []} />}
       </div>
     </div>
+  );
+}
+
+const possibleKindLabel: Record<PossibleEvent["candidate"]["kind"], string> = {
+  wordRepetition: "word repetition",
+  soundRepetition: "sound repetition",
+  prolongation: "prolongation",
+  block: "block",
+  filler: "filler",
+};
+
+const insufficientEvidenceReasonLabel: Record<PossibleEvent["reason"], string> = {
+  audioOnly: "audio only",
+};
+
+/**
+ * Detections withheld for insufficient evidence. They are not events: the panel count, rates and
+ * trends leave them out; each links to the evidence of the candidate it was withheld from.
+ */
+function PossibleEventsList({ possible }: { possible: PossibleEvent[] }) {
+  if (possible.length === 0) {
+    return null;
+  }
+  return (
+    <section aria-label="Possible – not enough evidence" className="border-t border-[#edf1ee]">
+      <h3 className={`m-0 px-4 pt-3 text-sm font-bold ${mutedTextClass}`}>
+        Possible – not enough evidence ({possible.length})
+      </h3>
+      {possible.map(({ reason, candidate }, index) => (
+        <details
+          className="border-b border-[#edf1ee] px-4 py-3 last:border-b-0"
+          key={`${candidate.kind}-${candidate.startSeconds}-${index}`}
+        >
+          <summary className="flex cursor-pointer items-center gap-3">
+            <span className="min-w-0 break-words">
+              Possible {possibleKindLabel[candidate.kind]} – not enough evidence (
+              {insufficientEvidenceReasonLabel[reason]})
+            </span>
+            <time className={`ml-auto ${mutedTextClass}`}>
+              {formatTime(candidate.startSeconds)}
+            </time>
+          </summary>
+          <p className={`m-0 mt-2 break-words text-sm ${mutedTextClass}`}>
+            {candidate.evidence?.explanation ?? eventDetail(candidate)}
+          </p>
+          {candidate.evidence && candidate.evidence.supporting.length > 0 && (
+            <p className={`m-0 mt-1 break-words text-xs ${mutedTextClass}`}>
+              Evidence: {candidate.evidence.supporting.join(", ")}
+            </p>
+          )}
+        </details>
+      ))}
+    </section>
   );
 }
 

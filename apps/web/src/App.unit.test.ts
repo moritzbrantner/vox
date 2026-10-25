@@ -106,7 +106,7 @@ describe("fallbackAnalyze", () => {
     expect(report.byKind.block).toBeGreaterThanOrEqual(1);
   });
 
-  it("detects repeated acoustic onset bursts", () => {
+  it("withholds audio-only repeated onset bursts as insufficient evidence", () => {
     const sampleRate = 16_000;
     const samples: number[] = [];
     for (let index = 0; index < 3; index += 1) {
@@ -124,7 +124,16 @@ describe("fallbackAnalyze", () => {
       report.events.some(
         (event) => event.kind === "soundRepetition" && event.source === "acoustic",
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(report.insufficientEvidence?.length).toBeGreaterThan(0);
+    for (const possible of report.insufficientEvidence ?? []) {
+      expect(possible.reason).toBe("audioOnly");
+      expect(possible.candidate.kind).toBe("soundRepetition");
+      expect(possible.candidate.acousticEvidence?.onsetCount).toBeGreaterThanOrEqual(2);
+    }
+    // Withheld detections stay out of every count.
+    expect(report.byKind.soundRepetition).toBeUndefined();
+    expect(report.stutterCount).toBe(report.events.length);
   });
 
   it("filters quiet acoustic-only candidates", () => {

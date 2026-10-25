@@ -1,6 +1,6 @@
 {
   "empty": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -40,7 +40,7 @@
       "speechDurationSeconds": -0.0,
       "voiceActivityRatio": -0.0
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -116,7 +116,7 @@
     "wordCount": 3
   },
   "incomplete/audio too short": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -192,7 +192,7 @@
     "wordCount": 2
   },
   "incomplete/transcript without audio": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -249,7 +249,7 @@
     "wordCount": 3
   },
   "invalid/inverted segment": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -309,7 +309,7 @@
     "error": "segment times must be finite"
   },
   "invalid/non-finite partial segment": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -366,7 +366,7 @@
     "wordCount": 2
   },
   "invalid/non-finite pause": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": null,
       "blockCount": 1,
@@ -442,7 +442,7 @@
       "speechDurationSeconds": 1.2399999999999998,
       "voiceActivityRatio": 0.6526315789473683
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.7999999999999999,
       "blockCount": 1,
@@ -585,7 +585,7 @@
       "speechDurationSeconds": 0.9,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -680,7 +680,7 @@
       "speechDurationSeconds": 0.42,
       "voiceActivityRatio": 0.7
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -772,7 +772,7 @@
       "speechDurationSeconds": 0.9,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -867,7 +867,7 @@
       "speechDurationSeconds": 2.0,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 1.2000000000000002,
       "blockCount": 1,
@@ -962,7 +962,7 @@
     "wordCount": 1
   },
   "partial and final": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1019,7 +1019,7 @@
     "wordCount": 3
   },
   "partial only": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 1.0,
       "blockCount": 1,
@@ -1071,7 +1071,7 @@
       "speechDurationSeconds": 0.42,
       "voiceActivityRatio": 0.7
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1080,9 +1080,7 @@
       "longestBlockSeconds": 0.0,
       "totalBlockSeconds": -0.0
     },
-    "byKind": {
-      "soundRepetition": 1
-    },
+    "byKind": {},
     "captureMetrics": {
       "activitySeconds": 0.24,
       "channels": 1,
@@ -1103,25 +1101,37 @@
       "samplesPerChannel": 9600
     },
     "chunks": [],
-    "events": [
+    "events": [],
+    "insufficientEvidence": [
       {
-        "acousticEvidence": {
-          "energyRms": 0.12731913649118864,
-          "onsetCount": 2,
-          "onsetRate": 5.555555555555555,
-          "spectralCentroidHz": 231.11145489032452
+        "candidate": {
+          "acousticEvidence": {
+            "energyRms": 0.12731913649118864,
+            "onsetCount": 2,
+            "onsetRate": 5.555555555555555,
+            "spectralCentroidHz": 231.11145489032452
+          },
+          "confidence": 0.7799999713897705,
+          "detail": "2 repeated onset bursts",
+          "endSeconds": 0.5,
+          "evidence": {
+            "explanation": "2 onsets 0.08-0.35 s apart at regular intervals.",
+            "id": "soundRepetition:acoustic:onset:0",
+            "supporting": [
+              "acoustic:onset:0",
+              "acoustic:onset:1"
+            ]
+          },
+          "kind": "soundRepetition",
+          "source": "acoustic",
+          "startSeconds": 0.13999999999999999,
+          "text": "repeated bursts"
         },
-        "confidence": 0.7799999713897705,
-        "detail": "2 repeated onset bursts",
-        "endSeconds": 0.5,
-        "kind": "soundRepetition",
-        "source": "acoustic",
-        "startSeconds": 0.13999999999999999,
-        "text": "repeated bursts"
+        "reason": "audioOnly"
       }
     ],
     "sessionStartedAt": "fixture",
-    "severity": "high",
+    "severity": "none",
     "speechStats": {
       "articulationRateWpm": 0.0,
       "eventDensityPer100Words": 0.0,
@@ -1132,13 +1142,13 @@
       "speakingDurationSeconds": 0.0,
       "wordsPerMinute": 0.0
     },
-    "stutterCount": 1,
-    "stuttersPerMinute": 60.0,
+    "stutterCount": 0,
+    "stuttersPerMinute": 0.0,
     "totalDurationSeconds": 0.6,
     "wordCount": 0
   },
   "repetitions/transcript": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1303,7 +1313,7 @@
     "wordCount": 16
   },
   "silence/pause only": {
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 3.0,
       "blockCount": 1,
@@ -1355,7 +1365,7 @@
       "speechDurationSeconds": -0.0,
       "voiceActivityRatio": -0.0
     },
-    "analyzerVersion": "1",
+    "analyzerVersion": "2",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,

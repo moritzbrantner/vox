@@ -24,7 +24,7 @@ mod speech_reference;
 #[path = "../stutter_bench.rs"]
 mod stutter_bench;
 
-const USAGE: &str = "usage: stutter-eval --labels <labels.csv> --clips <clips dir> [--speakers <clipId,speakerId csv>] [--vote-threshold 1-3] [--limit N] [--out report.json]";
+const USAGE: &str = "usage: stutter-eval --labels <labels.csv> --clips <clips dir> [--speakers <clipId,speakerId csv>] [--vote-threshold 1-3] [--limit N] [--candidate withhold-audio-only-sound-repetitions [--compare-on train|held-out]] [--out report.json]";
 
 fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {
@@ -43,6 +43,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let mut vote_threshold = 2_u8;
     let mut limit = None;
     let mut out = None;
+    let mut candidate = None;
+    let mut comparison_partition = stutter_bench::ComparisonPartition::Train;
     let mut args = args.into_iter();
     while let Some(flag) = args.next() {
         let mut value = || {
@@ -68,6 +70,25 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 )
             }
             "--out" => out = Some(PathBuf::from(value()?)),
+            "--candidate" => {
+                let name = value()?;
+                candidate = Some(
+                    stutter_bench::Candidate::parse(&name)
+                        .ok_or_else(|| format!("unknown candidate {name}\n{USAGE}"))?,
+                )
+            }
+            "--compare-on" => {
+                comparison_partition = match value()?.as_str() {
+                    "train" => stutter_bench::ComparisonPartition::Train,
+                    // Promotion criterion 1: look at a candidate version's held-out result once.
+                    "held-out" => stutter_bench::ComparisonPartition::HeldOut,
+                    other => {
+                        return Err(format!(
+                            "--compare-on must be train or held-out, not {other}"
+                        ))
+                    }
+                }
+            }
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -82,6 +103,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
         vote_threshold,
         limit,
         detector_revision: detector_revision(),
+        candidate,
+        comparison_partition,
     };
     let report = stutter_bench::run_sep28k_corpus(&options).map_err(|error| error.to_string())?;
     let json = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;

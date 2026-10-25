@@ -47,8 +47,12 @@ bun run benchmark:stutter:corpus \
   --labels /path/to/SEP-28k_labels.csv \
   --clips /path/to/clips \
   [--speakers /path/to/verified-speakers.csv] \
-  [--vote-threshold 2] [--limit N] [--out report.json]
+  [--vote-threshold 2] [--limit N] \
+  [--candidate withhold-audio-only-sound-repetitions [--compare-on train|held-out]] \
+  [--out report.json]
 ```
+
+`scripts/sep28k-download.py` downloads the audio and cuts the clips into a directory outside the repository (the dataset's own scripts no longer run on current numpy); with `--speakers` it turns SEP-28k-E's clip table into `speakers.csv` and `labels-with-speaker.csv`. The first real run is in [`docs/benchmarks/sep28k-sound-repetition.md`](../../../docs/benchmarks/sep28k-sound-repetition.md).
 
 - `--clips` uses the layout written by the dataset's download script: `<clips>/<Show>/<EpId>/<Show>_<EpId>_<ClipId>.wav`.
 - `--speakers` is a verified mapping with the columns `clipId,speakerId`, where clip ids are `Show:EpId:ClipId` (for example from SEP-28k-E). The held-out metrics are speaker-exclusive only when every scored clip has a verified speaker; otherwise the report says why they are not.
@@ -73,8 +77,15 @@ Fixed before any candidate is compared with the existing detector:
 3. **No hidden regressions.** No per-kind F1 and no fluent false-positive rate may get worse by more than the paired interval allows, and the challenge-set results are reported next to the main ones.
 4. **Comparable inputs.** Both runs use identical label, mapping and scored-audio hashes and the same vote threshold.
 5. **Calibration and abstention.** For candidates that output probabilities, the Brier rule above applies. For candidates that can abstain, coverage is reported, and abstained clips count as misses when comparing F1.
+6. **Abstaining candidates** (owner decision for #27, 2026-10-25). A candidate that abstains instead of detecting is promoted when its held-out fluent false-positive rate drops and the paired 95% interval of that difference excludes zero, and no other kind's precision or F1 regresses beyond its paired interval. The recall it gives up on the abstained kind is accepted and reported as a coverage cost. Criterion 2 does not apply to it.
 
-The paired-difference computation (criteria 2–3) and abstention coverage (5) are added together with the first candidate (#76).
+### Paired comparison and abstention
+
+`--candidate` scores a candidate next to the existing detector on the same clips. `--compare-on train` (default) compares them on the training partition while the candidate is developed; `--compare-on held-out` is run once per candidate version (criterion 1). Both need a speaker-exclusive partition. The report's `candidate.paired` holds both detectors' metrics, the candidate − baseline differences of macro and micro F1, the fluent false-positive rate and per-kind F1 and precision with paired percentile bootstrap 95% intervals (1000 shared resamples of speakers, seed `sep28k-paired-bootstrap-v1`; precision only over draws where both detectors predict the kind), the coverage cost of each abstained kind, and `promotion`: the applicable rule (`abstention` or `macroF1`), each criterion with whether it is met, and the decision. A comparison of runs whose label, mapping or scored-audio hashes, vote threshold or scored clip set differ is refused.
+
+An abstention ("insufficient evidence") is neither a detection nor a negative: on a reference positive it is a false negative, on a reference negative it is neither a true negative nor a false positive, and it never flags a fluent clip. Each kind reports `abstained` and `coverage` (share of clips with a decision).
+
+The one candidate so far, `withhold-audio-only-sound-repetitions`, is the product's `EvidencePolicy::WithholdAudioOnlySoundRepetitions`. Withholding only partitions the fused events, so one analysis gives both detectors: the existing detector (`ReportAll`) predicts every reported or withheld kind, the candidate predicts the reported kinds and abstains on the withheld ones.
 
 ## Dataset card: SEP-28k
 
@@ -155,6 +166,8 @@ Each native event carries `evidence`:
 | `missing:acoustic:afterWindow` | `beyondAnalyzedAudioWindow`: the recording continues after the first 90 s that acoustic analysis reads |
 | `missing:transcript` | `noFinalTranscript` |
 | `missing:speaker` | `noSpeakerAttribution`: who spoke, and whether voices overlapped, is unknown |
+
+`AnalysisReport.insufficientEvidence` lists detections withheld for insufficient evidence (`reason: "audioOnly"`): sound repetitions that rest on repeated acoustic onset bursts alone. On SEP-28k such bursts fire on fluent speech about as often as on sound repetitions, so they are not events: counts, rates, severity, chunks and trends leave them out. Each keeps its candidate with the evidence it cites, and the analysis details show it as "possible sound repetition – not enough evidence (audio only)". A sound repetition with transcript support (hyphenated sounds, fragment + word, or fused with an acoustic candidate) is still an event. The shared fallback withholds its audio-only sound repetitions the same way (without `evidence`; the candidate keeps its `acousticEvidence`).
 
 A missing observation is never a negative: no acoustic event without analyzed audio does not mean fluent speech, and no conflict without audio is not a confirmation. Speaker identity is not inferred from voice activity or from a session-wide "only I speak" declaration.
 

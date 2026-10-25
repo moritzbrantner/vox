@@ -29,7 +29,7 @@ pub enum SpeechAnalysisError {
 type Result<T> = std::result::Result<T, SpeechAnalysisError>;
 
 /// Bump whenever the detector's output can change for the same input; saved sessions record it.
-pub const SPEECH_ANALYSIS_VERSION: &str = "1";
+pub const SPEECH_ANALYSIS_VERSION: &str = "2";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +90,42 @@ pub struct AnalysisReport {
     /// one. Absent from the batch reference and older reports.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<AnalysisCapabilities>,
+    /// Detections withheld for insufficient evidence: not events, and left out of every count,
+    /// rate and trend. Each keeps the candidate it was withheld from, with its evidence.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub insufficient_evidence: Vec<PossibleEvent>,
+}
+
+/// Which candidate detections the analyzer reports as events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EvidencePolicy {
+    /// Every candidate that passes its threshold is an event (the detector before #27).
+    #[cfg_attr(not(test), allow(dead_code))]
+    ReportAll,
+    /// Sound repetitions found in the audio alone (repeated onset bursts with no transcript
+    /// support) are withheld as insufficient evidence: on SEP-28k such clusters fire on fluent
+    /// speech about as often as on sound repetitions (`docs/benchmarks/sep28k-sound-repetition.md`).
+    WithholdAudioOnlySoundRepetitions,
+}
+
+/// The policy the product uses; the benchmark compares it with `ReportAll`.
+pub(crate) const PRODUCT_EVIDENCE_POLICY: EvidencePolicy =
+    EvidencePolicy::WithholdAudioOnlySoundRepetitions;
+
+/// A "possible – not enough evidence" detection (`AnalysisReport::insufficient_evidence`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PossibleEvent {
+    pub reason: InsufficientEvidenceReason,
+    /// The withheld candidate, with its evidence (cited observations are in the report).
+    pub candidate: StutterEvent,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InsufficientEvidenceReason {
+    /// Only the audio supports it; no transcript evidence was available or overlapping.
+    AudioOnly,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -370,7 +406,7 @@ pub(crate) struct AcousticObservations {
 /// `speech_pipeline::analyze_speech_session`, which adds the cited observations.
 #[cfg(test)]
 pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<AnalysisReport> {
-    analyze_with_evidence(request).map(|(report, _)| report)
+    analyze_with_evidence(request, PRODUCT_EVIDENCE_POLICY).map(|(report, _)| report)
 }
 
 /// The stuttering-specific detector. Every stage gives its events `evidence` citing the
@@ -378,6 +414,7 @@ pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<Anal
 /// candidates it combines. Also returns the acoustic observations, when audio was analyzed.
 pub(crate) fn analyze_with_evidence(
     request: AnalyzeSpeechRequest,
+    policy: EvidencePolicy,
 ) -> Result<(AnalysisReport, Option<AcousticObservations>)> {
     let mut events = Vec::new();
     let mut tokens = Vec::new();
@@ -426,6 +463,23 @@ pub(crate) fn analyze_with_evidence(
             && (left.start_seconds - right.start_seconds).abs() < 0.08
             && left.text == right.text
     });
+    // Withholding is a pure partition of the fused events, so `ReportAll` events are exactly
+    // the events plus the withheld candidates of the same input.
+    let mut insufficient_evidence = Vec::new();
+    if policy == EvidencePolicy::WithholdAudioOnlySoundRepetitions {
+        let (withheld, kept): (Vec<_>, Vec<_>) = events.into_iter().partition(|event| {
+            event.kind == StutterKind::SoundRepetition
+                && event.source == Some(EventSource::Acoustic)
+        });
+        events = kept;
+        insufficient_evidence = withheld
+            .into_iter()
+            .map(|candidate| PossibleEvent {
+                reason: InsufficientEvidenceReason::AudioOnly,
+                candidate,
+            })
+            .collect();
+    }
 
     let word_count = tokens
         .iter()
@@ -482,6 +536,7 @@ pub(crate) fn analyze_with_evidence(
         capture_metrics: capture,
         observations: None,
         capabilities: None,
+        insufficient_evidence,
     };
     Ok((report, acoustic_observations))
 }
@@ -1981,16 +2036,14 @@ mod tests {
         }));
     }
 
-    #[test]
-    fn detects_repeated_acoustic_bursts() {
+    fn repeated_bursts_request() -> AnalyzeSpeechRequest {
         let sample_rate = 16_000;
         let mut samples = Vec::new();
         for _ in 0..3 {
             samples.extend(sine_wave(440.0, sample_rate, 0.08));
             samples.extend(vec![0.0; (sample_rate as f32 * 0.12) as usize]);
         }
-
-        let report = analyze_speech_session_impl(AnalyzeSpeechRequest {
+        AnalyzeSpeechRequest {
             segments: vec![TranscriptSegmentInput {
                 text: "start".to_string(),
                 start_seconds: 0.0,
@@ -2003,13 +2056,53 @@ mod tests {
             session_started_at: None,
             samples: Some(samples),
             sample_rate: Some(sample_rate),
-        })
-        .unwrap();
+        }
+    }
 
-        assert!(report.events.iter().any(|event| {
-            event.kind == StutterKind::SoundRepetition
-                && event.source == Some(EventSource::Acoustic)
-        }));
+    fn audio_only_sound_repetition(event: &StutterEvent) -> bool {
+        event.kind == StutterKind::SoundRepetition && event.source == Some(EventSource::Acoustic)
+    }
+
+    #[test]
+    fn detects_repeated_acoustic_bursts() {
+        let (report, _) =
+            analyze_with_evidence(repeated_bursts_request(), EvidencePolicy::ReportAll).unwrap();
+        assert!(report.events.iter().any(audio_only_sound_repetition));
+    }
+
+    #[test]
+    fn audio_only_sound_repetitions_are_withheld_and_left_out_of_counts() {
+        let (all, _) =
+            analyze_with_evidence(repeated_bursts_request(), EvidencePolicy::ReportAll).unwrap();
+        let report = analyze_speech_session_impl(repeated_bursts_request()).unwrap();
+
+        assert!(!report.events.iter().any(audio_only_sound_repetition));
+        assert!(!report.insufficient_evidence.is_empty());
+        for possible in &report.insufficient_evidence {
+            assert_eq!(possible.reason, InsufficientEvidenceReason::AudioOnly);
+            assert!(audio_only_sound_repetition(&possible.candidate));
+            assert!(possible.candidate.evidence.is_some());
+        }
+        // Withholding only partitions the events; counts cover the reported ones alone.
+        let key = |event: &StutterEvent| (event.kind, event.start_seconds.to_bits());
+        let mut partitioned = report
+            .events
+            .iter()
+            .chain(
+                report
+                    .insufficient_evidence
+                    .iter()
+                    .map(|possible| &possible.candidate),
+            )
+            .map(key)
+            .collect::<Vec<_>>();
+        let mut reported_all = all.events.iter().map(key).collect::<Vec<_>>();
+        partitioned.sort_by_key(|(kind, start)| (*start, format!("{kind:?}")));
+        reported_all.sort_by_key(|(kind, start)| (*start, format!("{kind:?}")));
+        assert_eq!(partitioned, reported_all);
+        assert_eq!(report.stutter_count, report.events.len());
+        assert!(report.stutter_count < all.stutter_count);
+        assert_eq!(report.by_kind.get(&StutterKind::SoundRepetition), None);
     }
 
     #[test]
