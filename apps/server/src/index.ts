@@ -110,7 +110,7 @@ export function createComputeRequestHandler(deps: ComputeServerDeps) {
         const body = validateAnalyzeSpeechRequest(
           await readJson(request, deps.config.maxBodyBytes),
         );
-        const report = fallbackAnalyze(body);
+        const report = fallbackAnalyze(body, "computeServer");
         const captureMetrics = await measureCapture(body, request.signal, hooks);
         // Saved sessions record which analyzer produced a report.
         return jsonResponse(captureMetrics ? { ...report, captureMetrics } : report, 200, {

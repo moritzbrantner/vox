@@ -1,3 +1,5 @@
+import { ANALYSIS_CAPABILITIES } from "./analysisCapabilities";
+
 export type TranscriptSegment = {
   text: string;
   startSeconds: number;
@@ -41,13 +43,20 @@ export type StutterEvent = {
 export type EventEvidence = {
   id: string;
   supporting: string[];
+  /** Observations that speak against the decision without overturning it; absent when none. */
+  conflicting?: string[];
   explanation: string;
 };
 
 export type ObservationChannel = "transcript" | "pause" | "acoustic" | "speaker";
 
-/** A missing channel is never evidence of absence. */
-export type MissingObservationReason = "noAudio" | "noFinalTranscript" | "noSpeakerAttribution";
+/** A missing channel, or uncovered part of the timeline, is never evidence of absence. */
+export type MissingObservationReason =
+  | "noAudio"
+  | "audioTooShortForAnalysis"
+  | "beyondAnalyzedAudioWindow"
+  | "noFinalTranscript"
+  | "noSpeakerAttribution";
 
 /** Product-level observation with a stable id derived from its position in the input. */
 export type SpeechObservation = {
@@ -62,6 +71,9 @@ export type SpeechObservation = {
   | { type: "transcriptToken"; raw: string; normalized: string; segment: number; token: number }
   | { type: "pause"; index: number; afterText?: string }
   | { type: "audioWindow"; sampleCount: number; sampleRate: number }
+  /** Energy voice activity: someone spoke; identity is never inferred from it. */
+  | { type: "speechActivity"; index: number; attribution: "unattributed"; score: number }
+  | { type: "onset"; index: number; strength: number }
   | { type: "missing"; reason: MissingObservationReason }
 );
 
@@ -112,6 +124,11 @@ export type AnalysisReport = {
    * Absent from the shared fallback and older reports, which do not produce typed evidence.
    */
   observations?: SpeechObservation[];
+  /**
+   * Which outputs the producing analyzer supports (see `ANALYSIS_CAPABILITIES`). Absent from
+   * reports that predate it; their capabilities are unknown, not full.
+   */
+  capabilities?: import("./analysisCapabilities").AnalysisCapabilities;
 };
 
 export type SpeechStats = {
@@ -327,7 +344,14 @@ export function emptyReport(): AnalysisReport {
   };
 }
 
-export function fallbackAnalyze(request: AnalyzeSpeechRequest): AnalysisReport {
+/**
+ * Reduced analysis shared by the browser and the compute server. Its report names its producer's
+ * capabilities, so it is never read as the native evidence-carrying analysis.
+ */
+export function fallbackAnalyze(
+  request: AnalyzeSpeechRequest,
+  producer: "onDevice" | "computeServer" = "onDevice",
+): AnalysisReport {
   const transcriptEvents: StutterEvent[] = [];
   let wordCount = 0;
   let duration = 0;
@@ -426,6 +450,7 @@ export function fallbackAnalyze(request: AnalyzeSpeechRequest): AnalysisReport {
       return acc;
     }, {}),
     acousticStats: acoustic?.stats,
+    capabilities: ANALYSIS_CAPABILITIES[producer],
   };
 }
 
@@ -1181,6 +1206,7 @@ function longestRun(value: string) {
   }
   return longest;
 }
+export * from "./analysisCapabilities";
 export * from "./capture";
 export * from "./outcomes";
 export * from "./sessions";

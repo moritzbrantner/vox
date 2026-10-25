@@ -12,6 +12,10 @@ mod speech_analysis;
 #[allow(dead_code)]
 #[path = "../speech_pipeline.rs"]
 mod speech_pipeline;
+// The pipeline's tests use the shared reference cases.
+#[cfg(test)]
+#[path = "../speech_reference.rs"]
+mod speech_reference;
 
 use speech_analysis::{AnalyzeSpeechRequest, PauseInput, TranscriptSegmentInput};
 

@@ -1,10 +1,24 @@
+//! Product-level speech analysis: typed observations, stuttering-specific interpretation that
+//! cites them, and the capabilities of this analyzer.
+//!
+//! Every event of the detector (`speech_analysis`) carries `evidence`: a stable id, the
+//! observations supporting it, observations conflicting with it and why it was decided. The
+//! report lists exactly the observations its events cite, plus one explicit observation per
+//! missing channel or uncovered time range. A missing channel is never evidence of absence.
+//!
+//! The reports equal those of the batch detector before this path existed
+//! (`speech_reference`), apart from what the path adds.
+
 use serde::Serialize;
 
 use crate::speech_analysis::{
-    analyze_with_repetitions, is_filler, sound_repetition, timed_tokens, AnalysisReport,
-    AnalyzeSpeechRequest, EventEvidence, EventSource, SpeechAnalysisError, StutterEvent,
-    StutterKind, TimedToken,
+    analyze_with_evidence, timed_tokens, AcousticObservations, AnalysisReport,
+    AnalyzeSpeechRequest, SpeechAnalysisError, StutterEvent, StutterKind, TimedToken,
 };
+
+/// Appended to the explanation of every event that rests on transcript token times.
+pub(crate) const INTERPOLATED_TIMING_NOTE: &str =
+    "token times are interpolated within the segment.";
 
 /// Evidence channel an observation comes from.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -27,16 +41,26 @@ pub enum TimingSource {
     Session,
 }
 
-/// Why a channel has no observations. A missing channel is never evidence of absence.
+/// Why a channel, or part of the timeline, has no observations.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-// The shared "No" prefix is the wire meaning: each variant names what is absent.
-#[allow(clippy::enum_variant_names)]
 pub enum MissingReason {
     NoAudio,
+    /// Audio was supplied but is shorter than the 250 ms acoustic analysis needs.
+    AudioTooShortForAnalysis,
+    /// The recording continues after the window acoustic analysis reads (its first 90 s).
+    BeyondAnalyzedAudioWindow,
     NoFinalTranscript,
-    /// The request carries no per-interval speaker identity.
+    /// The request carries no per-interval speaker identity or overlap detection: who spoke,
+    /// and whether voices overlapped, is unknown.
     NoSpeakerAttribution,
+}
+
+/// Who a speech-activity interval belongs to. Energy VAD establishes no identity.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SpeakerAttribution {
+    Unattributed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -62,6 +86,16 @@ pub enum ObservationDetail {
         sample_count: usize,
         sample_rate: u32,
     },
+    /// Energy voice activity (audio-analysis) in the analyzed audio window.
+    #[serde(rename_all = "camelCase")]
+    SpeechActivity {
+        index: usize,
+        attribution: SpeakerAttribution,
+        /// Mean frame RMS of the interval.
+        score: f32,
+    },
+    #[serde(rename_all = "camelCase")]
+    Onset { index: usize, strength: f32 },
     #[serde(rename_all = "camelCase")]
     Missing { reason: MissingReason },
 }
@@ -82,40 +116,107 @@ pub struct Observation {
     pub detail: ObservationDetail,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct ObservationSet {
-    observations: Vec<Observation>,
+pub(crate) fn token_id(segment: usize, token: usize) -> String {
+    format!("transcript:{segment}:{token}")
 }
 
-impl ObservationSet {
-    fn tokens_of(&self, segment: usize) -> impl Iterator<Item = &Observation> {
-        self.observations.iter().filter(move |observation| {
-            matches!(observation.detail, ObservationDetail::TranscriptToken { segment: s, .. } if s == segment)
-        })
+pub(crate) fn pause_id(index: usize) -> String {
+    format!("pause:{index}")
+}
+
+pub(crate) fn speech_id(index: usize) -> String {
+    format!("acoustic:speech:{index}")
+}
+
+pub(crate) fn onset_id(index: usize) -> String {
+    format!("acoustic:onset:{index}")
+}
+
+/// How completely an analyzer produces one output.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Support {
+    Supported,
+    /// Produced by a simpler method; not comparable with a supported output. Only the shared
+    /// fallback reports it; the variant keeps the wire vocabulary complete.
+    #[allow(dead_code)]
+    Reduced,
+    Unsupported,
+}
+
+/// One row of the cross-runtime capability matrix (`STUTTER_BENCH.md`, "Evidence contract and
+/// cross-runtime capabilities"). The shared fallback reports its own rows;
+/// `packages/shared/fixtures/analysis-parity.json` keeps them in step.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisCapabilities {
+    pub producer: &'static str,
+    /// True when an analyzer lacks outputs a richer runtime produces.
+    pub reduced: bool,
+    pub outputs: CapabilityOutputs,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityOutputs {
+    pub word_repetition: Support,
+    pub sound_repetition: Support,
+    pub prolongation: Support,
+    pub filler: Support,
+    pub pause_block: Support,
+    pub acoustic_events: Support,
+    pub fusion: Support,
+    pub event_evidence: Support,
+    pub missing_observations: Support,
+    pub capture_metrics: Support,
+    pub speaker_attribution: Support,
+}
+
+pub(crate) fn native_capabilities() -> AnalysisCapabilities {
+    AnalysisCapabilities {
+        producer: "desktopNative",
+        reduced: false,
+        outputs: CapabilityOutputs {
+            word_repetition: Support::Supported,
+            sound_repetition: Support::Supported,
+            prolongation: Support::Supported,
+            filler: Support::Supported,
+            pause_block: Support::Supported,
+            acoustic_events: Support::Supported,
+            fusion: Support::Supported,
+            event_evidence: Support::Supported,
+            missing_observations: Support::Supported,
+            capture_metrics: Support::Supported,
+            speaker_attribution: Support::Unsupported,
+        },
     }
 }
 
-/// Product-level speech analysis: typed observations, then stuttering-specific interpretation.
-///
-/// Transcript repetitions are interpreted here from token observations and keep links to them;
-/// the remaining stages still run in the batch detector (`speech_analysis`) and move onto this
-/// path one at a time, each checked against that batch reference.
+/// Analyzes a session and attaches the observations its events cite.
 pub(crate) fn analyze_speech_session(
     request: AnalyzeSpeechRequest,
 ) -> Result<AnalysisReport, SpeechAnalysisError> {
-    let observations = collect_observations(&request)?;
-    let mut report = analyze_with_repetitions(request, |segment, _| {
-        interpret_repetitions(&observations, segment)
-    })?;
+    let observations = collect_transcript_and_pause_observations(&request)?;
+    let audio = audio_window(&request);
+    let (mut report, acoustic) = analyze_with_evidence(request)?;
+    let mut observations = observations;
+    observations.extend(acoustic_observations(audio, acoustic.as_ref()));
+    observations.extend(missing_observations(
+        &observations,
+        audio,
+        acoustic.as_ref(),
+    ));
+    annotate_conflicts(&mut report.events, &observations);
+
     let cited: Vec<&str> = report
         .events
         .iter()
         .filter_map(|event| event.evidence.as_ref())
-        .flat_map(|evidence| evidence.supporting.iter().map(String::as_str))
+        .flat_map(|evidence| evidence.supporting.iter().chain(&evidence.conflicting))
+        .map(String::as_str)
         .collect();
     report.observations = Some(
         observations
-            .observations
             .into_iter()
             .filter(|observation| {
                 matches!(observation.detail, ObservationDetail::Missing { .. })
@@ -123,12 +224,13 @@ pub(crate) fn analyze_speech_session(
             })
             .collect(),
     );
+    report.capabilities = Some(native_capabilities());
     Ok(report)
 }
 
-fn collect_observations(
+fn collect_transcript_and_pause_observations(
     request: &AnalyzeSpeechRequest,
-) -> Result<ObservationSet, SpeechAnalysisError> {
+) -> Result<Vec<Observation>, SpeechAnalysisError> {
     let mut observations = Vec::new();
     for (index, segment) in request.segments.iter().enumerate() {
         if !segment.is_final {
@@ -140,7 +242,7 @@ fn collect_observations(
                 "segment times must be finite".to_string(),
             ));
         }
-        for (token_index, token) in timed_tokens(segment).into_iter().enumerate() {
+        for (token_index, token) in timed_tokens(index, segment).into_iter().enumerate() {
             observations.push(token_observation(
                 index,
                 token_index,
@@ -154,7 +256,7 @@ fn collect_observations(
             continue;
         }
         observations.push(Observation {
-            id: format!("pause:{index}"),
+            id: pause_id(index),
             channel: ObservationChannel::Pause,
             start_seconds: pause.start_seconds,
             end_seconds: pause.end_seconds,
@@ -166,53 +268,137 @@ fn collect_observations(
             },
         });
     }
+    Ok(observations)
+}
 
-    let timeline_end_seconds = request
-        .segments
-        .iter()
-        .filter(|segment| segment.is_final)
-        .map(|segment| segment.end_seconds)
-        .chain(request.pauses.iter().map(|pause| pause.end_seconds))
-        .filter(|value| value.is_finite())
-        .fold(0.0_f64, f64::max);
-
+/// Sample count and rate of usable request audio.
+fn audio_window(request: &AnalyzeSpeechRequest) -> Option<(usize, u32)> {
     match (&request.samples, request.sample_rate) {
         (Some(samples), Some(sample_rate)) if !samples.is_empty() && sample_rate > 0 => {
-            observations.push(Observation {
-                id: "audio:0".to_string(),
-                channel: ObservationChannel::Acoustic,
-                start_seconds: 0.0,
-                end_seconds: samples.len() as f64 / f64::from(sample_rate),
-                timing: TimingSource::Observed,
-                confidence: None,
-                detail: ObservationDetail::AudioWindow {
-                    sample_count: samples.len(),
-                    sample_rate,
-                },
-            });
+            Some((samples.len(), sample_rate))
         }
-        _ => observations.push(missing(
+        _ => None,
+    }
+}
+
+fn acoustic_observations(
+    audio: Option<(usize, u32)>,
+    acoustic: Option<&AcousticObservations>,
+) -> Vec<Observation> {
+    let mut observations = Vec::new();
+    if let Some((sample_count, sample_rate)) = audio {
+        observations.push(Observation {
+            id: "audio:0".to_string(),
+            channel: ObservationChannel::Acoustic,
+            start_seconds: 0.0,
+            end_seconds: sample_count as f64 / f64::from(sample_rate),
+            timing: TimingSource::Observed,
+            confidence: None,
+            detail: ObservationDetail::AudioWindow {
+                sample_count,
+                sample_rate,
+            },
+        });
+    }
+    let Some(acoustic) = acoustic else {
+        return observations;
+    };
+    for (index, span) in acoustic.speech_spans.iter().enumerate() {
+        observations.push(Observation {
+            id: speech_id(index),
+            channel: ObservationChannel::Acoustic,
+            start_seconds: span.start_seconds,
+            end_seconds: span.end_seconds,
+            timing: TimingSource::Observed,
+            confidence: None,
+            detail: ObservationDetail::SpeechActivity {
+                index,
+                attribution: SpeakerAttribution::Unattributed,
+                score: span.score,
+            },
+        });
+    }
+    for (index, onset) in acoustic.onsets.iter().enumerate() {
+        observations.push(Observation {
+            id: onset_id(index),
+            channel: ObservationChannel::Acoustic,
+            start_seconds: onset.seconds,
+            end_seconds: onset.seconds,
+            timing: TimingSource::Observed,
+            confidence: None,
+            detail: ObservationDetail::Onset {
+                index,
+                strength: onset.strength,
+            },
+        });
+    }
+    observations
+}
+
+/// One explicit observation per missing channel or time range the analysis did not cover.
+fn missing_observations(
+    observations: &[Observation],
+    audio: Option<(usize, u32)>,
+    acoustic: Option<&AcousticObservations>,
+) -> Vec<Observation> {
+    let timeline_end_seconds = observations
+        .iter()
+        .map(|observation| observation.end_seconds)
+        .filter(|value| value.is_finite())
+        .fold(0.0_f64, f64::max);
+    let mut missing = Vec::new();
+    match (audio, acoustic) {
+        (None, _) => missing.push(missing_observation(
+            "missing:acoustic",
             ObservationChannel::Acoustic,
             MissingReason::NoAudio,
+            0.0,
             timeline_end_seconds,
         )),
+        (Some(_), None) => missing.push(missing_observation(
+            "missing:acoustic",
+            ObservationChannel::Acoustic,
+            MissingReason::AudioTooShortForAnalysis,
+            0.0,
+            timeline_end_seconds,
+        )),
+        (Some((sample_count, sample_rate)), Some(acoustic)) => {
+            let audio_end = sample_count as f64 / f64::from(sample_rate);
+            // Resampling may shift the analyzed length by a sample.
+            if audio_end - acoustic.analyzed_seconds > 0.01 {
+                missing.push(Observation {
+                    timing: TimingSource::Observed,
+                    ..missing_observation(
+                        "missing:acoustic:afterWindow",
+                        ObservationChannel::Acoustic,
+                        MissingReason::BeyondAnalyzedAudioWindow,
+                        acoustic.analyzed_seconds,
+                        audio_end,
+                    )
+                });
+            }
+        }
     }
     if !observations
         .iter()
         .any(|observation| observation.channel == ObservationChannel::Transcript)
     {
-        observations.push(missing(
+        missing.push(missing_observation(
+            "missing:transcript",
             ObservationChannel::Transcript,
             MissingReason::NoFinalTranscript,
+            0.0,
             timeline_end_seconds,
         ));
     }
-    observations.push(missing(
+    missing.push(missing_observation(
+        "missing:speaker",
         ObservationChannel::Speaker,
         MissingReason::NoSpeakerAttribution,
+        0.0,
         timeline_end_seconds,
     ));
-    Ok(ObservationSet { observations })
+    missing
 }
 
 fn token_observation(
@@ -222,7 +408,7 @@ fn token_observation(
     confidence: Option<f32>,
 ) -> Observation {
     Observation {
-        id: format!("transcript:{segment}:{token}"),
+        id: timed.id,
         channel: ObservationChannel::Transcript,
         start_seconds: timed.start_seconds,
         end_seconds: timed.end_seconds,
@@ -237,17 +423,17 @@ fn token_observation(
     }
 }
 
-fn missing(channel: ObservationChannel, reason: MissingReason, end_seconds: f64) -> Observation {
-    let name = match channel {
-        ObservationChannel::Transcript => "transcript",
-        ObservationChannel::Pause => "pause",
-        ObservationChannel::Acoustic => "acoustic",
-        ObservationChannel::Speaker => "speaker",
-    };
+fn missing_observation(
+    id: &str,
+    channel: ObservationChannel,
+    reason: MissingReason,
+    start_seconds: f64,
+    end_seconds: f64,
+) -> Observation {
     Observation {
-        id: format!("missing:{name}"),
+        id: id.to_string(),
         channel,
-        start_seconds: 0.0,
+        start_seconds,
         end_seconds,
         timing: TimingSource::Session,
         confidence: None,
@@ -255,230 +441,112 @@ fn missing(channel: ObservationChannel, reason: MissingReason, end_seconds: f64)
     }
 }
 
-/// Word and initial-sound repetitions within one final segment, each citing the token
-/// observations it rests on. Mirrors the batch reference's transcript repetition stage.
-fn interpret_repetitions(observations: &ObservationSet, segment: usize) -> Vec<StutterEvent> {
-    let tokens: Vec<(&str, TimedToken)> = observations
-        .tokens_of(segment)
-        .map(|observation| match &observation.detail {
-            ObservationDetail::TranscriptToken {
-                raw, normalized, ..
-            } => (
-                observation.id.as_str(),
-                TimedToken {
-                    raw: raw.clone(),
-                    normalized: normalized.clone(),
-                    start_seconds: observation.start_seconds,
-                    end_seconds: observation.end_seconds,
-                },
-            ),
-            _ => unreachable!("tokens_of yields transcript tokens"),
-        })
-        .collect();
-    let mut events = Vec::new();
-    let mut index = 0;
-    while index + 1 < tokens.len() {
-        let token = &tokens[index].1;
-        if token.normalized.is_empty() || is_filler(&token.normalized) {
-            index += 1;
+/// Speech activity of at least 0.1 s inside a block conflicts with it: someone spoke during the
+/// silence it reports. The block is kept, as the detector decided it; the conflict is recorded so
+/// a reader can weigh it. Without analyzed audio there is nothing to conflict with, which is not
+/// a confirmation either: the missing acoustic observation says so.
+fn annotate_conflicts(events: &mut [StutterEvent], observations: &[Observation]) {
+    for event in events
+        .iter_mut()
+        .filter(|event| event.kind == StutterKind::Block)
+    {
+        let Some(evidence) = event.evidence.as_mut() else {
             continue;
+        };
+        let mut overlap_seconds = 0.0;
+        for observation in observations {
+            if !matches!(observation.detail, ObservationDetail::SpeechActivity { .. }) {
+                continue;
+            }
+            let overlap = event.end_seconds.min(observation.end_seconds)
+                - event.start_seconds.max(observation.start_seconds);
+            if overlap >= 0.1 {
+                overlap_seconds += overlap;
+                evidence.conflicting.push(observation.id.clone());
+            }
         }
-        let mut run_end = index + 1;
-        while run_end < tokens.len() && tokens[run_end].1.normalized == token.normalized {
-            run_end += 1;
+        if !evidence.conflicting.is_empty() {
+            evidence.explanation = format!(
+                "{} Speech activity was observed during {overlap_seconds:.2} s of it.",
+                evidence.explanation
+            );
         }
-        if run_end - index >= 2 {
-            events.push(repetition_event(
-                StutterKind::WordRepetition,
-                &tokens[index..run_end],
-                "Repeated word sequence",
-                0.86,
-                format!(
-                    "The same word appears {} times in a row in one final transcript segment; token times are interpolated within the segment.",
-                    run_end - index
-                ),
-            ));
-            index = run_end;
-            continue;
-        }
-        if index + 2 < tokens.len() && sound_repetition(token, &tokens[index + 1].1) {
-            events.push(repetition_event(
-                StutterKind::SoundRepetition,
-                &tokens[index..index + 2],
-                "Repeated initial sound",
-                0.74,
-                "A short fragment is followed by a word starting with it in one final transcript segment; token times are interpolated within the segment.".to_string(),
-            ));
-            index += 2;
-            continue;
-        }
-        index += 1;
-    }
-    events
-}
-
-fn repetition_event(
-    kind: StutterKind,
-    tokens: &[(&str, TimedToken)],
-    detail: &str,
-    confidence: f32,
-    explanation: String,
-) -> StutterEvent {
-    let first = &tokens[0];
-    let last = &tokens[tokens.len() - 1];
-    let prefix = match kind {
-        StutterKind::WordRepetition => "wordRepetition",
-        _ => "soundRepetition",
-    };
-    StutterEvent {
-        kind,
-        start_seconds: first.1.start_seconds,
-        end_seconds: last.1.end_seconds,
-        text: tokens
-            .iter()
-            .map(|(_, token)| token.raw.as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-        detail: detail.to_string(),
-        confidence,
-        source: Some(EventSource::Transcript),
-        acoustic_evidence: None,
-        evidence: Some(EventEvidence {
-            id: format!("{prefix}:{}", first.0),
-            supporting: tokens.iter().map(|(id, _)| (*id).to_string()).collect(),
-            explanation,
-        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::speech_analysis::{analyze_speech_session_impl, PauseInput, TranscriptSegmentInput};
+    use crate::speech_analysis::EventEvidence;
+    use crate::speech_reference::{cases, pause, request, segment, sine};
 
-    fn segment(text: &str, start: f64, end: f64, is_final: bool) -> TranscriptSegmentInput {
-        TranscriptSegmentInput {
-            text: text.to_string(),
-            start_seconds: start,
-            end_seconds: end,
-            confidence: Some(0.9),
-            speaker_score: None,
-            is_final,
-        }
+    fn report(case: AnalyzeSpeechRequest) -> AnalysisReport {
+        analyze_speech_session(case).unwrap()
     }
 
-    fn request(
-        segments: Vec<TranscriptSegmentInput>,
-        pauses: Vec<PauseInput>,
-        audio: Option<(Vec<f32>, Option<u32>)>,
-    ) -> AnalyzeSpeechRequest {
-        let (samples, sample_rate) = match audio {
-            Some((samples, rate)) => (Some(samples), rate),
-            None => (None, None),
-        };
-        AnalyzeSpeechRequest {
-            segments,
-            pauses,
-            session_started_at: Some("fixture".to_string()),
-            samples,
-            sample_rate,
-        }
-    }
-
-    fn pause(start: f64, end: f64) -> PauseInput {
-        PauseInput {
-            start_seconds: start,
-            end_seconds: end,
-            after_text: None,
-        }
-    }
-
-    /// The report without what only the evidence path adds.
-    fn without_evidence(report: &AnalysisReport) -> serde_json::Value {
-        let mut value = serde_json::to_value(report).unwrap();
-        value.as_object_mut().unwrap().remove("observations");
-        for event in value["events"].as_array_mut().unwrap() {
-            event.as_object_mut().unwrap().remove("evidence");
-        }
-        value
-    }
-
-    fn tone(seconds: f64, sample_rate: u32) -> Vec<f32> {
-        (0..(seconds * f64::from(sample_rate)) as usize)
-            .map(|index| {
-                ((index as f32) * 0.05).sin() * if (index / 4_000) % 2 == 0 { 0.4 } else { 0.0 }
+    fn evidence_of(report: &AnalysisReport) -> Vec<&EventEvidence> {
+        report
+            .events
+            .iter()
+            .map(|event| {
+                event
+                    .evidence
+                    .as_ref()
+                    .expect("every event carries evidence")
             })
             .collect()
     }
 
     #[test]
-    fn evidence_path_matches_the_batch_reference() {
-        let cases = vec![
-            ("silence", request(vec![], vec![pause(0.0, 3.0)], None)),
-            (
-                "repetitions",
-                request(
-                    vec![
-                        segment("I I I want to go", 0.0, 2.0, true),
-                        segment("b- but the the train", 2.5, 4.0, true),
-                        segment("um um so so", 4.5, 5.5, true),
-                    ],
-                    vec![pause(2.0, 2.5), pause(4.0, 4.5)],
-                    None,
-                ),
-            ),
-            (
-                "partial and final",
-                request(
-                    vec![
-                        segment("we we", 0.0, 1.0, false),
-                        segment("we we need", 0.0, 1.5, true),
-                        segment("need need", 1.5, 9.0, false),
-                    ],
-                    vec![],
-                    None,
-                ),
-            ),
-            (
-                "transcript and audio",
-                request(
-                    vec![segment("go go now", 0.0, 2.0, true)],
-                    vec![pause(2.0, 3.0)],
-                    Some((tone(3.0, 16_000), Some(16_000))),
-                ),
-            ),
-        ];
-        for (name, case) in cases {
-            let reference = analyze_speech_session_impl(case.clone()).unwrap();
-            let pipeline = analyze_speech_session(case).unwrap();
+    fn every_event_cites_listed_observations_with_unique_ids() {
+        for (name, case) in cases() {
+            let Ok(report) = analyze_speech_session(case) else {
+                continue;
+            };
+            let listed: Vec<&str> = report
+                .observations
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|observation| observation.id.as_str())
+                .collect();
+            let mut unique = listed.clone();
+            unique.sort_unstable();
+            unique.dedup();
             assert_eq!(
-                without_evidence(&pipeline),
-                without_evidence(&reference),
-                "{name}"
+                unique.len(),
+                listed.len(),
+                "{name}: duplicate observation ids"
             );
+            let evidence = evidence_of(&report);
+            let mut ids: Vec<&str> = evidence.iter().map(|item| item.id.as_str()).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            assert_eq!(ids.len(), evidence.len(), "{name}: duplicate event ids");
+            for item in evidence {
+                for cited in item.supporting.iter().chain(&item.conflicting) {
+                    assert!(
+                        listed.contains(&cited.as_str()),
+                        "{name}: {cited} not listed"
+                    );
+                }
+            }
+            assert_eq!(report.capabilities, Some(native_capabilities()));
         }
     }
 
     #[test]
-    fn invalid_timing_fails_like_the_batch_reference() {
-        let case = request(vec![segment("I I", f64::NAN, 1.0, true)], vec![], None);
-        assert!(analyze_speech_session_impl(case.clone()).is_err());
-        assert!(analyze_speech_session(case).is_err());
-        for audio in [(vec![0.1; 800], None), (vec![0.1; 800], Some(0))] {
-            let case = request(vec![segment("no no", 0.0, 1.0, true)], vec![], Some(audio));
-            assert!(analyze_speech_session_impl(case.clone()).is_err());
-            assert!(analyze_speech_session(case).is_err());
+    fn same_input_gives_the_same_serialized_report() {
+        for (name, case) in cases() {
+            let Ok(first) = analyze_speech_session(case.clone()) else {
+                continue;
+            };
+            assert_eq!(
+                serde_json::to_value(first).unwrap(),
+                serde_json::to_value(report(case)).unwrap(),
+                "{name}"
+            );
         }
-        // A non-finite partial segment is ignored by both.
-        let partial = request(
-            vec![
-                segment("x", f64::NAN, 1.0, false),
-                segment("so so", 0.0, 1.0, true),
-            ],
-            vec![],
-            None,
-        );
-        assert!(analyze_speech_session(partial).is_ok());
     }
 
     #[test]
@@ -491,23 +559,19 @@ mod tests {
             vec![],
             None,
         );
-        let report = analyze_speech_session(case.clone()).unwrap();
-        let repetition = report
-            .events
-            .iter()
-            .find(|event| event.kind == StutterKind::WordRepetition)
-            .unwrap();
+        let report = report(case);
         assert_eq!(
-            repetition.evidence,
-            Some(EventEvidence {
+            evidence_of(&report),
+            vec![&EventEvidence {
                 id: "wordRepetition:transcript:1:0".to_string(),
                 supporting: vec![
                     "transcript:1:0".to_string(),
                     "transcript:1:1".to_string(),
                     "transcript:1:2".to_string(),
                 ],
+                conflicting: vec![],
                 explanation: "The same word appears 3 times in a row in one final transcript segment; token times are interpolated within the segment.".to_string(),
-            })
+            }]
         );
         let json = serde_json::to_value(&report).unwrap();
         assert_eq!(
@@ -543,27 +607,136 @@ mod tests {
                 "missing:speaker",
             ]
         );
-        // Same input, same ids and order.
         assert_eq!(
-            serde_json::to_value(analyze_speech_session(case).unwrap()).unwrap(),
-            json
+            json["capabilities"]["outputs"]["speakerAttribution"],
+            "unsupported"
         );
     }
 
     #[test]
+    fn every_stage_names_its_evidence() {
+        let ids = |case| {
+            evidence_of(&report(case))
+                .into_iter()
+                .map(|evidence| (evidence.id.clone(), evidence.supporting.clone()))
+                .collect::<Vec<_>>()
+        };
+        let strings = |values: &[&str]| values.iter().map(|value| value.to_string()).collect();
+        assert_eq!(
+            ids(request(
+                vec![segment("w-w-what a sssssstart uh", 0.0, 2.0, true)],
+                vec![pause(2.0, 3.0)],
+                None
+            )),
+            vec![
+                (
+                    "hyphenatedSoundRepetition:transcript:0:0".to_string(),
+                    strings(&["transcript:0:0"])
+                ),
+                (
+                    "prolongation:transcript:0:2".to_string(),
+                    strings(&["transcript:0:2"])
+                ),
+                (
+                    "filler:transcript:0:3".to_string(),
+                    strings(&["transcript:0:3"])
+                ),
+                ("block:pause:0".to_string(), strings(&["pause:0"])),
+            ]
+        );
+
+        let rate = 16_000;
+        let fused = report(request(
+            vec![segment("ssssstart", 0.0, 0.9, true)],
+            vec![],
+            Some((sine(180.0, rate, 0.9), Some(rate))),
+        ));
+        let evidence = evidence_of(&fused);
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0].id, "prolongation:transcript:0:0");
+        assert_eq!(evidence[0].supporting[0], "transcript:0:0");
+        assert_eq!(evidence[0].supporting[1], "acoustic:speech:0");
+        assert!(evidence[0].explanation.contains(
+            "Fused with the overlapping acoustic candidate prolongation:acoustic:speech:0"
+        ));
+        let speech = fused
+            .observations
+            .unwrap()
+            .into_iter()
+            .find(|observation| observation.id == "acoustic:speech:0")
+            .unwrap();
+        assert_eq!(
+            speech.detail,
+            ObservationDetail::SpeechActivity {
+                index: 0,
+                attribution: SpeakerAttribution::Unattributed,
+                score: match speech.detail {
+                    ObservationDetail::SpeechActivity { score, .. } => score,
+                    _ => unreachable!(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn speech_inside_a_reported_block_is_a_conflict() {
+        let rate = 16_000;
+        let report = report(request(
+            vec![segment("so", 0.0, 0.4, true)],
+            vec![pause(0.4, 1.6)],
+            Some((sine(200.0, rate, 2.0), Some(rate))),
+        ));
+        let block = report
+            .events
+            .iter()
+            .find(|event| event.kind == StutterKind::Block)
+            .unwrap()
+            .evidence
+            .as_ref()
+            .unwrap();
+        assert_eq!(block.supporting, vec!["pause:0".to_string()]);
+        assert_eq!(block.conflicting, vec!["acoustic:speech:0".to_string()]);
+        assert!(block
+            .explanation
+            .ends_with("Speech activity was observed during 1.20 s of it."));
+
+        // Without audio, the same block has no conflict, and the acoustic channel says why.
+        let without_audio = analyze_speech_session(request(
+            vec![segment("so", 0.0, 0.4, true)],
+            vec![pause(0.4, 1.6)],
+            None,
+        ))
+        .unwrap();
+        assert!(evidence_of(&without_audio)[0].conflicting.is_empty());
+        assert!(without_audio
+            .observations
+            .unwrap()
+            .iter()
+            .any(|observation| observation.detail
+                == ObservationDetail::Missing {
+                    reason: MissingReason::NoAudio
+                }));
+    }
+
+    #[test]
     fn missing_channels_are_explicit_and_never_observed_negatives() {
-        let reasons = |case: AnalyzeSpeechRequest| -> Vec<(ObservationChannel, MissingReason)> {
-            analyze_speech_session(case)
-                .unwrap()
+        let reasons = |case: AnalyzeSpeechRequest| -> Vec<(String, MissingReason, f64, f64)> {
+            report(case)
                 .observations
                 .unwrap()
                 .into_iter()
                 .filter_map(|observation| match observation.detail {
-                    ObservationDetail::Missing { reason } => Some((observation.channel, reason)),
+                    ObservationDetail::Missing { reason } => Some((
+                        observation.id,
+                        reason,
+                        observation.start_seconds,
+                        observation.end_seconds,
+                    )),
                     _ => None,
                 })
                 .collect()
         };
+        let missing = |id: &str, reason, start, end| (id.to_string(), reason, start, end);
         assert_eq!(
             reasons(request(
                 vec![segment("partial", 0.0, 1.0, false)],
@@ -571,14 +744,18 @@ mod tests {
                 None
             )),
             vec![
-                (ObservationChannel::Acoustic, MissingReason::NoAudio),
-                (
-                    ObservationChannel::Transcript,
-                    MissingReason::NoFinalTranscript
+                missing("missing:acoustic", MissingReason::NoAudio, 0.0, 2.0),
+                missing(
+                    "missing:transcript",
+                    MissingReason::NoFinalTranscript,
+                    0.0,
+                    2.0
                 ),
-                (
-                    ObservationChannel::Speaker,
-                    MissingReason::NoSpeakerAttribution
+                missing(
+                    "missing:speaker",
+                    MissingReason::NoSpeakerAttribution,
+                    0.0,
+                    2.0
                 ),
             ]
         );
@@ -586,12 +763,30 @@ mod tests {
             reasons(request(
                 vec![segment("ok", 0.0, 1.0, true)],
                 vec![],
-                Some((vec![0.1; 1_600], Some(16_000)))
+                Some((vec![0.1; 800], Some(16_000)))
             )),
-            vec![(
-                ObservationChannel::Speaker,
-                MissingReason::NoSpeakerAttribution
-            )]
+            vec![
+                missing(
+                    "missing:acoustic",
+                    MissingReason::AudioTooShortForAnalysis,
+                    0.0,
+                    1.0
+                ),
+                missing(
+                    "missing:speaker",
+                    MissingReason::NoSpeakerAttribution,
+                    0.0,
+                    1.0
+                ),
+            ]
         );
+        let long = reasons(request(
+            vec![segment("late late words", 91.0, 92.0, true)],
+            vec![],
+            Some((vec![0.0; 4_000 * 92], Some(4_000))),
+        ));
+        assert_eq!(long[0].0, "missing:acoustic:afterWindow");
+        assert_eq!(long[0].1, MissingReason::BeyondAnalyzedAudioWindow);
+        assert!((long[0].2 - 90.0).abs() < 1e-6 && (long[0].3 - 92.0).abs() < 1e-9);
     }
 }

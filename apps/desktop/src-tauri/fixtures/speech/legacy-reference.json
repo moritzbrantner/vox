@@ -1,0 +1,1406 @@
+{
+  "empty": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": 0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {},
+    "chunks": [],
+    "events": [],
+    "sessionStartedAt": "fixture",
+    "severity": "none",
+    "speechStats": {
+      "articulationRateWpm": 0.0,
+      "eventDensityPer100Words": 0.0,
+      "fluencyPercentage": 100.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 0.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 0,
+    "stuttersPerMinute": 0.0,
+    "totalDurationSeconds": 0.0,
+    "wordCount": 0
+  },
+  "incomplete/audio beyond the analyzed window": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 90.0,
+      "meanOnsetRate": 0.0,
+      "meanRms": 0.0,
+      "noiseFloorRms": 0.0,
+      "onsetCount": 0,
+      "silenceDurationSeconds": 90.0,
+      "speechDurationSeconds": -0.0,
+      "voiceActivityRatio": -0.0
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.0,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 90.0,
+      "frameCount": 4500,
+      "frameSamples": 80,
+      "longestNoInputSeconds": 90.0,
+      "noInputSeconds": 90.0,
+      "sampleRate": 4000,
+      "samplesPerChannel": 360000
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.0,
+        "endSeconds": 92.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 91.0,
+        "stutterCount": 1,
+        "text": "late late words",
+        "wordCount": 3,
+        "wordsPerMinute": 180.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 91.66666666666666,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 91.0,
+        "text": "late late"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 180.0,
+      "eventDensityPer100Words": 33.33333333333333,
+      "fluencyPercentage": 66.66666666666667,
+      "meanChunkDurationSeconds": 1.0,
+      "meanChunkWords": 3.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 1.0,
+      "wordsPerMinute": 1.9565217391304346
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 0.6521739130434783,
+    "totalDurationSeconds": 92.0,
+    "wordCount": 3
+  },
+  "incomplete/audio too short": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.05,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 0.05,
+      "frameCount": 3,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.0,
+      "noInputSeconds": 0.0,
+      "sampleRate": 16000,
+      "samplesPerChannel": 800
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.0,
+        "endSeconds": 1.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "go go",
+        "wordCount": 2,
+        "wordsPerMinute": 120.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "go go"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 120.0,
+      "eventDensityPer100Words": 50.0,
+      "fluencyPercentage": 50.0,
+      "meanChunkDurationSeconds": 1.0,
+      "meanChunkWords": 2.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 1.0,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 1.0,
+    "wordCount": 2
+  },
+  "incomplete/transcript without audio": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.5,
+        "endSeconds": 1.5,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "no no audio",
+        "wordCount": 3,
+        "wordsPerMinute": 120.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "no no"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 120.0,
+      "eventDensityPer100Words": 33.33333333333333,
+      "fluencyPercentage": 66.66666666666667,
+      "meanChunkDurationSeconds": 1.5,
+      "meanChunkWords": 3.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 1.5,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 40.0,
+    "totalDurationSeconds": 1.5,
+    "wordCount": 3
+  },
+  "invalid/inverted segment": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.0,
+        "endSeconds": 1.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 2.0,
+        "stutterCount": 0,
+        "text": "to to",
+        "wordCount": 2,
+        "wordsPerMinute": 120.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 2.0,
+        "text": "to to"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 120.0,
+      "eventDensityPer100Words": 50.0,
+      "fluencyPercentage": 50.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 2.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 1.0,
+    "wordCount": 2
+  },
+  "invalid/non-finite final segment": {
+    "error": "segment times must be finite"
+  },
+  "invalid/non-finite partial segment": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.0,
+        "endSeconds": 1.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "so so",
+        "wordCount": 2,
+        "wordsPerMinute": 120.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "so so"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 120.0,
+      "eventDensityPer100Words": 50.0,
+      "fluencyPercentage": 50.0,
+      "meanChunkDurationSeconds": 1.0,
+      "meanChunkWords": 2.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 1.0,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 1.0,
+    "wordCount": 2
+  },
+  "invalid/non-finite pause": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": null,
+      "blockCount": 1,
+      "blockedTimePercentage": null,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": null,
+      "totalBlockSeconds": null
+    },
+    "byKind": {
+      "block": 1
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.0,
+        "endSeconds": 1.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": 1.0,
+        "startSeconds": 0.0,
+        "stutterCount": 0,
+        "text": "ok",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.6600000262260437,
+        "detail": "infs silent pause before speech",
+        "endSeconds": null,
+        "kind": "block",
+        "source": "transcript",
+        "startSeconds": 1.0,
+        "text": "pause"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 60.0,
+      "eventDensityPer100Words": 100.0,
+      "fluencyPercentage": 0.0,
+      "meanChunkDurationSeconds": 1.0,
+      "meanChunkWords": 1.0,
+      "pauseDurationSeconds": null,
+      "speakingDurationSeconds": 1.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 0.0,
+    "totalDurationSeconds": null,
+    "wordCount": 1
+  },
+  "invalid/non-finite sample": {
+    "error": "audio samples must be finite"
+  },
+  "invalid/samples without rate": {
+    "error": "samples and sampleRate must be provided together"
+  },
+  "invalid/zero sample rate": {
+    "error": "sampleRate must be greater than zero"
+  },
+  "overlap/pause and acoustic block": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 1.9,
+      "meanOnsetRate": 0.5263157894736842,
+      "meanRms": 0.17870106096280383,
+      "noiseFloorRms": 0.0,
+      "onsetCount": 1,
+      "silenceDurationSeconds": 0.6600000000000001,
+      "speechDurationSeconds": 1.2399999999999998,
+      "voiceActivityRatio": 0.6526315789473683
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.7999999999999999,
+      "blockCount": 1,
+      "blockedTimePercentage": 42.10526315789473,
+      "blocksPerMinute": 31.57894736842106,
+      "longestBlockSeconds": 0.7999999999999999,
+      "totalBlockSeconds": 0.7999999999999999
+    },
+    "byKind": {
+      "block": 1,
+      "prolongation": 2
+    },
+    "captureMetrics": {
+      "activitySeconds": 1.2,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 1.9,
+      "frameCount": 95,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.7,
+      "noInputSeconds": 0.7,
+      "sampleRate": 16000,
+      "samplesPerChannel": 30400
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.6,
+        "endSeconds": 0.6,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "well",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      },
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 1,
+        "durationSeconds": 0.5999999999999999,
+        "endSeconds": 1.9,
+        "fillerCount": 0,
+        "index": 1,
+        "silentPauseSeconds": 0.09999999999999987,
+        "startSeconds": 1.3,
+        "stutterCount": 2,
+        "text": "then",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      }
+    ],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.27489060163497925,
+          "onsetCount": 0,
+          "onsetRate": 0.0,
+          "pitchMeanHz": 219.99993591308595,
+          "pitchStability": 0.99998332896913,
+          "spectralCentroidHz": 219.60258305867512,
+          "zeroCrossingRate": 0.026896311760612388
+        },
+        "confidence": 0.699999988079071,
+        "detail": "0.6s stable voiced stretch",
+        "endSeconds": 0.62,
+        "kind": "prolongation",
+        "source": "acoustic",
+        "startSeconds": 0.0,
+        "text": "well"
+      },
+      {
+        "acousticEvidence": {
+          "energyRms": 0.0,
+          "onsetCount": 1,
+          "silenceSeconds": 0.66,
+          "zeroCrossingRate": 0.0
+        },
+        "confidence": 0.8999999761581421,
+        "detail": "0.8s silent pause before speech; 0.7s acoustic silent block before speech",
+        "endSeconds": 1.4,
+        "kind": "block",
+        "source": "fused",
+        "startSeconds": 0.6,
+        "text": "then"
+      },
+      {
+        "acousticEvidence": {
+          "energyRms": 0.2827714681625366,
+          "onsetCount": 1,
+          "onsetRate": 1.612903225806452,
+          "pitchMeanHz": 219.99993260701498,
+          "pitchStability": 0.9999835755348545,
+          "spectralCentroidHz": 219.70646286010742,
+          "zeroCrossingRate": 0.026826722338204597
+        },
+        "confidence": 0.699999988079071,
+        "detail": "0.6s stable voiced stretch",
+        "endSeconds": 1.9,
+        "kind": "prolongation",
+        "source": "acoustic",
+        "startSeconds": 1.28,
+        "text": "then"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 100.00000000000001,
+      "eventDensityPer100Words": 150.0,
+      "fluencyPercentage": 0.0,
+      "meanChunkDurationSeconds": 0.5999999999999999,
+      "meanChunkWords": 1.0,
+      "pauseDurationSeconds": 0.7999999999999999,
+      "speakingDurationSeconds": 1.1999999999999997,
+      "wordsPerMinute": 63.15789473684212
+    },
+    "stutterCount": 3,
+    "stuttersPerMinute": 94.73684210526316,
+    "totalDurationSeconds": 1.9,
+    "wordCount": 2
+  },
+  "overlap/prolongation fused": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 0.9,
+      "meanOnsetRate": 0.0,
+      "meanRms": 0.28285448117689654,
+      "noiseFloorRms": 0.28038638830184937,
+      "onsetCount": 0,
+      "silenceDurationSeconds": 0.0,
+      "speechDurationSeconds": 0.9,
+      "voiceActivityRatio": 1.0
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "prolongation": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.9,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 0.9,
+      "frameCount": 45,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.0,
+      "noInputSeconds": 0.0,
+      "sampleRate": 16000,
+      "samplesPerChannel": 14400
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.9,
+        "endSeconds": 0.9,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "ssssstart",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      }
+    ],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.2828647792339325,
+          "onsetCount": 0,
+          "onsetRate": 0.0,
+          "pitchMeanHz": 179.99976886402476,
+          "pitchStability": 0.9999834030794525,
+          "spectralCentroidHz": 180.01919278231534,
+          "zeroCrossingRate": 0.022110457392294586
+        },
+        "confidence": 0.9800000190734863,
+        "detail": "Extended sound in word; 0.9s stable voiced stretch",
+        "endSeconds": 0.9,
+        "kind": "prolongation",
+        "source": "fused",
+        "startSeconds": 0.0,
+        "text": "ssssstart"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 60.0,
+      "eventDensityPer100Words": 100.0,
+      "fluencyPercentage": 0.0,
+      "meanChunkDurationSeconds": 0.9,
+      "meanChunkWords": 1.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.9,
+      "wordsPerMinute": 60.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 0.9,
+    "wordCount": 1
+  },
+  "overlap/repetition bursts and transcript": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 0.6,
+      "meanOnsetRate": 3.3333333333333335,
+      "meanRms": 0.12159378261401735,
+      "noiseFloorRms": 0.0,
+      "onsetCount": 2,
+      "silenceDurationSeconds": 0.18,
+      "speechDurationSeconds": 0.42,
+      "voiceActivityRatio": 0.7
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.24,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 0.6,
+      "frameCount": 30,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.12,
+      "noInputSeconds": 0.36,
+      "sampleRate": 16000,
+      "samplesPerChannel": 9600
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.6,
+        "endSeconds": 0.6,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "go go now",
+        "wordCount": 3,
+        "wordsPerMinute": 180.0
+      }
+    ],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.12731913649118864,
+          "onsetCount": 2,
+          "onsetRate": 5.555555555555555,
+          "spectralCentroidHz": 231.11145489032452
+        },
+        "confidence": 0.9800000190734863,
+        "detail": "Repeated word sequence; 2 repeated onset bursts",
+        "endSeconds": 0.5,
+        "kind": "wordRepetition",
+        "source": "fused",
+        "startSeconds": 0.0,
+        "text": "go go"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 180.0,
+      "eventDensityPer100Words": 33.33333333333333,
+      "fluencyPercentage": 66.66666666666667,
+      "meanChunkDurationSeconds": 0.6,
+      "meanChunkWords": 3.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.6,
+      "wordsPerMinute": 180.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 0.6,
+    "wordCount": 3
+  },
+  "overlap/resampled 8 kHz audio": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 0.9,
+      "meanOnsetRate": 0.0,
+      "meanRms": 0.2825016321783716,
+      "noiseFloorRms": 0.2800366282463074,
+      "onsetCount": 0,
+      "silenceDurationSeconds": 0.0,
+      "speechDurationSeconds": 0.9,
+      "voiceActivityRatio": 1.0
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "prolongation": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.9,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 0.9,
+      "frameCount": 45,
+      "frameSamples": 160,
+      "longestNoInputSeconds": 0.0,
+      "noInputSeconds": 0.0,
+      "sampleRate": 8000,
+      "samplesPerChannel": 7200
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.9,
+        "endSeconds": 0.9,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "ssssso",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      }
+    ],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.2825121283531189,
+          "onsetCount": 0,
+          "onsetRate": 0.0,
+          "pitchMeanHz": 179.99994988874957,
+          "pitchStability": 0.9999815564462885,
+          "spectralCentroidHz": 180.03109221024945,
+          "zeroCrossingRate": 0.022110457392294586
+        },
+        "confidence": 0.9800000190734863,
+        "detail": "Extended sound in word; 0.9s stable voiced stretch",
+        "endSeconds": 0.9,
+        "kind": "prolongation",
+        "source": "fused",
+        "startSeconds": 0.0,
+        "text": "ssssso"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 60.0,
+      "eventDensityPer100Words": 100.0,
+      "fluencyPercentage": 0.0,
+      "meanChunkDurationSeconds": 0.9,
+      "meanChunkWords": 1.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.9,
+      "wordsPerMinute": 60.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 0.9,
+    "wordCount": 1
+  },
+  "overlap/speech during a transcript pause": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 2.0,
+      "meanOnsetRate": 0.0,
+      "meanRms": 0.282842710915238,
+      "noiseFloorRms": 0.28284260630607605,
+      "onsetCount": 0,
+      "silenceDurationSeconds": 0.0,
+      "speechDurationSeconds": 2.0,
+      "voiceActivityRatio": 1.0
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 1.2000000000000002,
+      "blockCount": 1,
+      "blockedTimePercentage": 60.00000000000001,
+      "blocksPerMinute": 30.0,
+      "longestBlockSeconds": 1.2000000000000002,
+      "totalBlockSeconds": 1.2000000000000002
+    },
+    "byKind": {
+      "block": 1,
+      "prolongation": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 2.0,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 2.0,
+      "frameCount": 100,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.0,
+      "noInputSeconds": 0.0,
+      "sampleRate": 16000,
+      "samplesPerChannel": 32000
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 0.4,
+        "endSeconds": 0.4,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "so",
+        "wordCount": 1,
+        "wordsPerMinute": 60.0
+      }
+    ],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.2828427255153656,
+          "onsetCount": 0,
+          "onsetRate": 0.0,
+          "pitchMeanHz": 199.99379845821497,
+          "pitchStability": 0.9999996390968836,
+          "spectralCentroidHz": 199.98978231410788,
+          "zeroCrossingRate": 0.023470614284810433
+        },
+        "confidence": 0.8500000238418579,
+        "detail": "2.0s stable voiced stretch",
+        "endSeconds": 2.0,
+        "kind": "prolongation",
+        "source": "acoustic",
+        "startSeconds": 0.0,
+        "text": "so"
+      },
+      {
+        "confidence": 0.6600000262260437,
+        "detail": "1.2s silent pause before speech",
+        "endSeconds": 1.6,
+        "kind": "block",
+        "source": "transcript",
+        "startSeconds": 0.4,
+        "text": "pause"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 60.0,
+      "eventDensityPer100Words": 200.0,
+      "fluencyPercentage": 0.0,
+      "meanChunkDurationSeconds": 0.4,
+      "meanChunkWords": 1.0,
+      "pauseDurationSeconds": 1.2000000000000002,
+      "speakingDurationSeconds": 0.4,
+      "wordsPerMinute": 30.0
+    },
+    "stutterCount": 2,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 2.0,
+    "wordCount": 1
+  },
+  "partial and final": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "wordRepetition": 1
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.5,
+        "endSeconds": 1.5,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": -0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "we we need",
+        "wordCount": 3,
+        "wordsPerMinute": 120.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "we we"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 120.0,
+      "eventDensityPer100Words": 33.33333333333333,
+      "fluencyPercentage": 66.66666666666667,
+      "meanChunkDurationSeconds": 1.5,
+      "meanChunkWords": 3.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 1.5,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 40.0,
+    "totalDurationSeconds": 1.5,
+    "wordCount": 3
+  },
+  "partial only": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 1.0,
+      "blockCount": 1,
+      "blockedTimePercentage": 50.0,
+      "blocksPerMinute": 30.0,
+      "longestBlockSeconds": 1.0,
+      "totalBlockSeconds": 1.0
+    },
+    "byKind": {
+      "block": 1
+    },
+    "chunks": [],
+    "events": [
+      {
+        "confidence": 0.6600000262260437,
+        "detail": "1.0s silent pause before speech",
+        "endSeconds": 2.0,
+        "kind": "block",
+        "source": "transcript",
+        "startSeconds": 1.0,
+        "text": "pause"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 0.0,
+      "eventDensityPer100Words": 0.0,
+      "fluencyPercentage": 100.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 0.0,
+      "pauseDurationSeconds": 1.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 30.0,
+    "totalDurationSeconds": 2.0,
+    "wordCount": 0
+  },
+  "repetitions/acoustic bursts only": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 0.6,
+      "meanOnsetRate": 3.3333333333333335,
+      "meanRms": 0.12159378261401735,
+      "noiseFloorRms": 0.0,
+      "onsetCount": 2,
+      "silenceDurationSeconds": 0.18,
+      "speechDurationSeconds": 0.42,
+      "voiceActivityRatio": 0.7
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "soundRepetition": 1
+    },
+    "captureMetrics": {
+      "activitySeconds": 0.24,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 0.6,
+      "frameCount": 30,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 0.12,
+      "noInputSeconds": 0.36,
+      "sampleRate": 16000,
+      "samplesPerChannel": 9600
+    },
+    "chunks": [],
+    "events": [
+      {
+        "acousticEvidence": {
+          "energyRms": 0.12731913649118864,
+          "onsetCount": 2,
+          "onsetRate": 5.555555555555555,
+          "spectralCentroidHz": 231.11145489032452
+        },
+        "confidence": 0.7799999713897705,
+        "detail": "2 repeated onset bursts",
+        "endSeconds": 0.5,
+        "kind": "soundRepetition",
+        "source": "acoustic",
+        "startSeconds": 0.13999999999999999,
+        "text": "repeated bursts"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 0.0,
+      "eventDensityPer100Words": 0.0,
+      "fluencyPercentage": 100.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 0.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 0.6,
+    "wordCount": 0
+  },
+  "repetitions/transcript": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {
+      "filler": 3,
+      "prolongation": 1,
+      "soundRepetition": 1,
+      "wordRepetition": 3
+    },
+    "chunks": [
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 2.0,
+        "endSeconds": 2.0,
+        "fillerCount": 0,
+        "index": 0,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 0.0,
+        "stutterCount": 1,
+        "text": "I I I want to go",
+        "wordCount": 6,
+        "wordsPerMinute": 180.0
+      },
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.5,
+        "endSeconds": 4.0,
+        "fillerCount": 0,
+        "index": 1,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 2.5,
+        "stutterCount": 1,
+        "text": "b- but the the train",
+        "wordCount": 5,
+        "wordsPerMinute": 200.0
+      },
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 1.0,
+        "endSeconds": 5.5,
+        "fillerCount": 2,
+        "index": 2,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 4.5,
+        "stutterCount": 3,
+        "text": "um um so so",
+        "wordCount": 2,
+        "wordsPerMinute": 120.0
+      },
+      {
+        "averageConfidence": 0.8999999761581421,
+        "blockCount": 0,
+        "durationSeconds": 2.0,
+        "endSeconds": 8.0,
+        "fillerCount": 1,
+        "index": 3,
+        "silentPauseSeconds": 0.0,
+        "startSeconds": 6.0,
+        "stutterCount": 3,
+        "text": "w-w-what a sssssstart uh",
+        "wordCount": 3,
+        "wordsPerMinute": 90.0
+      }
+    ],
+    "events": [
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 1.0,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "I I I"
+      },
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 3.6999999999999997,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 3.1,
+        "text": "the the"
+      },
+      {
+        "confidence": 0.6100000143051147,
+        "detail": "Filler or restart marker",
+        "endSeconds": 4.75,
+        "kind": "filler",
+        "source": "transcript",
+        "startSeconds": 4.5,
+        "text": "um"
+      },
+      {
+        "confidence": 0.6100000143051147,
+        "detail": "Filler or restart marker",
+        "endSeconds": 5.0,
+        "kind": "filler",
+        "source": "transcript",
+        "startSeconds": 4.75,
+        "text": "um"
+      },
+      {
+        "confidence": 0.8600000143051147,
+        "detail": "Repeated word sequence",
+        "endSeconds": 5.5,
+        "kind": "wordRepetition",
+        "source": "transcript",
+        "startSeconds": 5.0,
+        "text": "so so"
+      },
+      {
+        "confidence": 0.8100000023841858,
+        "detail": "Hyphenated sound repetition",
+        "endSeconds": 6.5,
+        "kind": "soundRepetition",
+        "source": "transcript",
+        "startSeconds": 6.0,
+        "text": "w-w-what"
+      },
+      {
+        "confidence": 0.8100000023841858,
+        "detail": "Extended sound in word",
+        "endSeconds": 7.5,
+        "kind": "prolongation",
+        "source": "transcript",
+        "startSeconds": 7.0,
+        "text": "sssssstart"
+      },
+      {
+        "confidence": 0.6100000143051147,
+        "detail": "Filler or restart marker",
+        "endSeconds": 8.0,
+        "kind": "filler",
+        "source": "transcript",
+        "startSeconds": 7.5,
+        "text": "uh"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 147.69230769230768,
+      "eventDensityPer100Words": 50.0,
+      "fluencyPercentage": 50.0,
+      "meanChunkDurationSeconds": 1.625,
+      "meanChunkWords": 4.0,
+      "pauseDurationSeconds": 1.5,
+      "speakingDurationSeconds": 6.5,
+      "wordsPerMinute": 120.0
+    },
+    "stutterCount": 8,
+    "stuttersPerMinute": 60.0,
+    "totalDurationSeconds": 8.0,
+    "wordCount": 16
+  },
+  "silence/pause only": {
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 3.0,
+      "blockCount": 1,
+      "blockedTimePercentage": 100.0,
+      "blocksPerMinute": 20.0,
+      "longestBlockSeconds": 3.0,
+      "totalBlockSeconds": 3.0
+    },
+    "byKind": {
+      "block": 1
+    },
+    "chunks": [],
+    "events": [
+      {
+        "confidence": 0.6600000262260437,
+        "detail": "3.0s silent pause before speech",
+        "endSeconds": 3.0,
+        "kind": "block",
+        "source": "transcript",
+        "startSeconds": 0.0,
+        "text": "pause"
+      }
+    ],
+    "sessionStartedAt": "fixture",
+    "severity": "high",
+    "speechStats": {
+      "articulationRateWpm": 0.0,
+      "eventDensityPer100Words": 0.0,
+      "fluencyPercentage": 100.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 0.0,
+      "pauseDurationSeconds": 3.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 1,
+    "stuttersPerMinute": 20.0,
+    "totalDurationSeconds": 3.0,
+    "wordCount": 0
+  },
+  "silence/zero audio": {
+    "acousticStats": {
+      "analyzedDurationSeconds": 2.0,
+      "meanOnsetRate": 0.0,
+      "meanRms": 0.0,
+      "noiseFloorRms": 0.0,
+      "onsetCount": 0,
+      "silenceDurationSeconds": 2.0,
+      "speechDurationSeconds": -0.0,
+      "voiceActivityRatio": -0.0
+    },
+    "analyzerVersion": "1",
+    "blockerStats": {
+      "averageBlockSeconds": 0.0,
+      "blockCount": 0,
+      "blockedTimePercentage": -0.0,
+      "blocksPerMinute": 0.0,
+      "longestBlockSeconds": 0.0,
+      "totalBlockSeconds": -0.0
+    },
+    "byKind": {},
+    "captureMetrics": {
+      "activitySeconds": 0.0,
+      "channels": 1,
+      "clippedSampleCount": 0,
+      "clippedSampleRatio": 0.0,
+      "config": {
+        "activityRms": 0.01,
+        "clipLevel": 0.999,
+        "frameSeconds": 0.02,
+        "noInputRms": 0.0001
+      },
+      "durationSeconds": 2.0,
+      "frameCount": 100,
+      "frameSamples": 320,
+      "longestNoInputSeconds": 2.0,
+      "noInputSeconds": 2.0,
+      "sampleRate": 16000,
+      "samplesPerChannel": 32000
+    },
+    "chunks": [],
+    "events": [],
+    "sessionStartedAt": "fixture",
+    "severity": "none",
+    "speechStats": {
+      "articulationRateWpm": 0.0,
+      "eventDensityPer100Words": 0.0,
+      "fluencyPercentage": 100.0,
+      "meanChunkDurationSeconds": 0.0,
+      "meanChunkWords": 0.0,
+      "pauseDurationSeconds": -0.0,
+      "speakingDurationSeconds": 0.0,
+      "wordsPerMinute": 0.0
+    },
+    "stutterCount": 0,
+    "stuttersPerMinute": 0.0,
+    "totalDurationSeconds": 2.0,
+    "wordCount": 0
+  }
+}

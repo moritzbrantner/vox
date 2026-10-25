@@ -14,6 +14,10 @@ use audio_analysis_speakers::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::speech_pipeline::{
+    onset_id, pause_id, speech_id, token_id, AnalysisCapabilities, INTERPOLATED_TIMING_NOTE,
+};
+
 #[derive(Debug, Error)]
 pub enum SpeechAnalysisError {
     #[error("{0}")]
@@ -82,6 +86,10 @@ pub struct AnalysisReport {
     /// Absent from the batch reference (`analyze_speech_session_impl`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observations: Option<Vec<crate::speech_pipeline::Observation>>,
+    /// Which outputs this analyzer produces, so a reduced analyzer is never read as a richer
+    /// one. Absent from the batch reference and older reports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<AnalysisCapabilities>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -182,7 +190,23 @@ pub struct EventEvidence {
     pub id: String,
     /// Ids of the observations (in `AnalysisReport::observations`) the decision rests on.
     pub supporting: Vec<String>,
+    /// Ids of observations that speak against the decision without overturning it (e.g. speech
+    /// activity inside a transcript pause reported as a block). Empty when none were observed;
+    /// a missing channel is never a conflict or a confirmation.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conflicting: Vec<String>,
     pub explanation: String,
+}
+
+impl EventEvidence {
+    fn new(id: String, supporting: Vec<String>, explanation: String) -> Self {
+        Self {
+            id,
+            supporting,
+            conflicting: Vec::new(),
+            explanation,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -292,6 +316,8 @@ pub struct SpeakerIdentificationResult {
 
 #[derive(Debug, Clone)]
 pub(crate) struct TimedToken {
+    /// Observation id of the token (`speech_pipeline::token_id`).
+    pub(crate) id: String,
     pub(crate) raw: String,
     pub(crate) normalized: String,
     pub(crate) start_seconds: f64,
@@ -312,21 +338,47 @@ struct AcousticFrame {
 struct AcousticAnalysis {
     stats: AcousticStats,
     events: Vec<StutterEvent>,
+    speech_spans: Vec<AcousticSpan>,
+    onsets: Vec<AcousticOnset>,
 }
 
-/// Batch reference analysis. Its transcript repetition stage is the oracle that the typed
-/// evidence path in `speech_pipeline` reproduces; production and the benchmark use the pipeline.
+/// Generic speech-activity interval (energy VAD from audio-analysis) in the analyzed window. It
+/// says that someone spoke, not who: identity is never inferred from it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct AcousticSpan {
+    pub(crate) start_seconds: f64,
+    pub(crate) end_seconds: f64,
+    pub(crate) score: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct AcousticOnset {
+    pub(crate) seconds: f64,
+    pub(crate) strength: f32,
+}
+
+/// What the acoustic front end observed, for the typed observations of a report.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AcousticObservations {
+    /// Seconds of audio the acoustic analysis read, from the start of the recording.
+    pub(crate) analyzed_seconds: f64,
+    pub(crate) speech_spans: Vec<AcousticSpan>,
+    pub(crate) onsets: Vec<AcousticOnset>,
+}
+
+/// The report alone, as the detector's own tests read it; production and the benchmark use
+/// `speech_pipeline::analyze_speech_session`, which adds the cited observations.
 #[cfg(test)]
 pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<AnalysisReport> {
-    analyze_with_repetitions(request, |_, tokens| detect_repetitions(tokens))
+    analyze_with_evidence(request).map(|(report, _)| report)
 }
 
-/// The detector with its transcript repetition stage supplied by the caller, called per final
-/// segment with that segment's index among all request segments and its timed tokens.
-pub(crate) fn analyze_with_repetitions(
+/// The stuttering-specific detector. Every stage gives its events `evidence` citing the
+/// observations they rest on (ids from `speech_pipeline`); fusion merges the evidence of the
+/// candidates it combines. Also returns the acoustic observations, when audio was analyzed.
+pub(crate) fn analyze_with_evidence(
     request: AnalyzeSpeechRequest,
-    mut repetitions: impl FnMut(usize, &[TimedToken]) -> Vec<StutterEvent>,
-) -> Result<AnalysisReport> {
+) -> Result<(AnalysisReport, Option<AcousticObservations>)> {
     let mut events = Vec::new();
     let mut tokens = Vec::new();
     let mut duration = 0.0_f64;
@@ -349,15 +401,15 @@ pub(crate) fn analyze_with_repetitions(
         );
         duration = duration.max(segment.end_seconds);
         speaking_duration_seconds += (segment.end_seconds - segment.start_seconds).max(0.0);
-        let segment_tokens = timed_tokens(segment);
-        events.extend(repetitions(segment_index, &segment_tokens));
+        let segment_tokens = timed_tokens(segment_index, segment);
+        events.extend(detect_repetitions(&segment_tokens));
         events.extend(detect_prolongations(&segment_tokens));
         events.extend(detect_fillers(&segment_tokens));
         tokens.extend(segment_tokens);
     }
 
     events.extend(detect_blocks(&request.pauses));
-    let acoustic = analyze_acoustics(&request)?;
+    let mut acoustic = analyze_acoustics(&request)?;
     let capture = measure_capture(&request)?;
     if let Some(acoustic) = &acoustic {
         duration = duration.max(acoustic.stats.analyzed_duration_seconds);
@@ -407,8 +459,13 @@ pub(crate) fn analyze_with_repetitions(
     );
     let blocker_stats = blocker_stats(&events, total_duration_seconds);
     let chunks = chunk_analysis(&request.segments, &request.pauses, &events);
+    let acoustic_observations = acoustic.as_mut().map(|value| AcousticObservations {
+        analyzed_seconds: value.stats.analyzed_duration_seconds,
+        speech_spans: std::mem::take(&mut value.speech_spans),
+        onsets: std::mem::take(&mut value.onsets),
+    });
 
-    Ok(AnalysisReport {
+    let report = AnalysisReport {
         analyzer_version: SPEECH_ANALYSIS_VERSION,
         session_started_at: request.session_started_at,
         total_duration_seconds,
@@ -424,7 +481,9 @@ pub(crate) fn analyze_with_repetitions(
         acoustic_stats: acoustic.map(|value| value.stats),
         capture_metrics: capture,
         observations: None,
-    })
+        capabilities: None,
+    };
+    Ok((report, acoustic_observations))
 }
 
 /// Seconds of request audio the acoustic analysis reads; capture metrics cover the same window.
@@ -676,7 +735,25 @@ fn analyze_acoustics(request: &AnalyzeSpeechRequest) -> Result<Option<AcousticAn
         noise_floor_rms,
     };
 
-    Ok(Some(AcousticAnalysis { stats, events }))
+    Ok(Some(AcousticAnalysis {
+        stats,
+        events,
+        speech_spans: speech_spans
+            .iter()
+            .map(|span| AcousticSpan {
+                start_seconds: span.start_seconds,
+                end_seconds: span.end_seconds,
+                score: span.score,
+            })
+            .collect(),
+        onsets: onsets
+            .iter()
+            .map(|onset| AcousticOnset {
+                seconds: onset.timestamp_seconds,
+                strength: onset.strength,
+            })
+            .collect(),
+    }))
 }
 
 /// Rejects malformed audio; returns whether it is long enough (250 ms) for acoustic analysis.
@@ -736,7 +813,7 @@ fn detect_acoustic_blocks(
     silence_threshold: f64,
 ) -> Vec<StutterEvent> {
     let mut events = Vec::new();
-    for pair in speech_spans.windows(2) {
+    for (span_index, pair) in speech_spans.windows(2).enumerate() {
         let left = pair[0];
         let right = pair[1];
         let duration = right.start_seconds - left.end_seconds;
@@ -752,18 +829,34 @@ fn detect_acoustic_blocks(
         if gap_frames.iter().any(|frame| frame.rms > silence_threshold) {
             continue;
         }
-        let has_pause = request.pauses.iter().any(|pause| {
-            overlap_seconds(
-                pause.start_seconds,
-                pause.end_seconds,
-                left.end_seconds,
-                right.start_seconds,
-            ) >= 0.1
-        });
-        let followed_by_onset = onsets.iter().any(|onset| {
-            onset.timestamp_seconds >= right.start_seconds
-                && onset.timestamp_seconds <= right.start_seconds + 0.18
-        });
+        let overlapping_pauses = request
+            .pauses
+            .iter()
+            .enumerate()
+            .filter(|(_, pause)| {
+                overlap_seconds(
+                    pause.start_seconds,
+                    pause.end_seconds,
+                    left.end_seconds,
+                    right.start_seconds,
+                ) >= 0.1
+            })
+            .map(|(index, _)| pause_id(index))
+            .collect::<Vec<_>>();
+        let has_pause = !overlapping_pauses.is_empty();
+        let following_onsets = onsets
+            .iter()
+            .enumerate()
+            .filter(|(_, onset)| {
+                onset.timestamp_seconds >= right.start_seconds
+                    && onset.timestamp_seconds <= right.start_seconds + 0.18
+            })
+            .map(|(index, _)| onset_id(index))
+            .collect::<Vec<_>>();
+        let followed_by_onset = !following_onsets.is_empty();
+        let mut supporting = vec![speech_id(span_index), speech_id(span_index + 1)];
+        supporting.extend(following_onsets);
+        supporting.extend(overlapping_pauses);
         let confidence = (0.62_f64
             + if followed_by_onset { 0.1 } else { 0.0 }
             + if has_pause { 0.1 } else { 0.0 })
@@ -784,7 +877,15 @@ fn detect_acoustic_blocks(
                 zero_crossing_rate: Some(mean_refs(&gap_frames, |frame| frame.zero_crossing_rate)),
                 ..AcousticEvidence::default()
             }),
-            evidence: None,
+            evidence: Some(EventEvidence::new(
+                format!("block:{}", speech_id(span_index)),
+                supporting,
+                format!(
+                    "{duration:.2} s without speech activity or energy above the silence threshold between two speech-activity intervals{}{}.",
+                    if followed_by_onset { "; speech resumes with an onset" } else { "" },
+                    if has_pause { "; a captured pause overlaps the gap" } else { "" },
+                ),
+            )),
         });
     }
     events
@@ -797,18 +898,20 @@ fn detect_acoustic_prolongations(
     request: &AnalyzeSpeechRequest,
 ) -> Vec<StutterEvent> {
     let mut events = Vec::new();
-    for span in speech_spans {
+    for (span_index, span) in speech_spans.iter().enumerate() {
         let duration = span.duration_seconds();
         if duration < 0.45 {
             continue;
         }
-        let span_onsets = onsets
+        let (span_onset_ids, span_onsets): (Vec<String>, Vec<&Onset>) = onsets
             .iter()
-            .filter(|onset| {
+            .enumerate()
+            .filter(|(_, onset)| {
                 onset.timestamp_seconds >= span.start_seconds
                     && onset.timestamp_seconds <= span.end_seconds
             })
-            .collect::<Vec<_>>();
+            .map(|(index, onset)| (onset_id(index), onset))
+            .unzip();
         let span_frames = frames
             .iter()
             .filter(|frame| {
@@ -869,7 +972,26 @@ fn detect_acoustic_prolongations(
                 zero_crossing_rate: Some(mean_refs(&span_frames, |frame| frame.zero_crossing_rate)),
                 ..AcousticEvidence::default()
             }),
-            evidence: None,
+            evidence: Some(EventEvidence::new(
+                format!("prolongation:{}", speech_id(span_index)),
+                std::iter::once(speech_id(span_index))
+                    .chain(span_onset_ids)
+                    .collect(),
+                format!(
+                    "{duration:.2} s speech-activity interval with {} onset(s){}{}.",
+                    span_onsets.len(),
+                    if stable {
+                        "; pitch or spectral centroid stays stable"
+                    } else {
+                        ""
+                    },
+                    if transcript_support {
+                        "; an overlapping final transcript segment contains a stretched word"
+                    } else {
+                        ""
+                    },
+                ),
+            )),
         });
     }
     events
@@ -932,12 +1054,18 @@ fn detect_acoustic_repetitions(
                     )
                 })
                 .collect::<Vec<_>>();
+            let kind = if supported_by_transcript {
+                StutterKind::WordRepetition
+            } else {
+                StutterKind::SoundRepetition
+            };
+            let prefix = if supported_by_transcript {
+                "wordRepetition"
+            } else {
+                "soundRepetition"
+            };
             events.push(StutterEvent {
-                kind: if supported_by_transcript {
-                    StutterKind::WordRepetition
-                } else {
-                    StutterKind::SoundRepetition
-                },
+                kind,
                 start_seconds,
                 end_seconds,
                 text: nearest_text_at(&request.segments, start_seconds, end_seconds)
@@ -954,7 +1082,20 @@ fn detect_acoustic_repetitions(
                     })),
                     ..AcousticEvidence::default()
                 }),
-                evidence: None,
+                evidence: Some(EventEvidence::new(
+                    format!("{prefix}:{}", onset_id(index)),
+                    (index..end).map(onset_id).collect(),
+                    format!(
+                        "{} onsets 0.08-0.35 s apart{}{}.",
+                        cluster.len(),
+                        if regular { " at regular intervals" } else { "" },
+                        if supported_by_transcript {
+                            "; an overlapping final transcript segment repeats a word"
+                        } else {
+                            ""
+                        },
+                    ),
+                )),
             });
             index = end;
         } else {
@@ -994,6 +1135,13 @@ fn fuse_events(
                 (text_event.confidence.max(acoustic.confidence) + 0.08).min(0.98);
             text_event.source = Some(EventSource::Fused);
             text_event.acoustic_evidence = acoustic.acoustic_evidence.clone();
+            if let (Some(text), Some(acoustic)) = (&mut text_event.evidence, &acoustic.evidence) {
+                text.supporting.extend(acoustic.supporting.iter().cloned());
+                text.explanation = format!(
+                    "{} Fused with the overlapping acoustic candidate {}: {}",
+                    text.explanation, acoustic.id, acoustic.explanation
+                );
+            }
         } else {
             text_event.source = text_event.source.or(Some(EventSource::Transcript));
         }
@@ -1150,7 +1298,12 @@ fn stability_score(values: &[f64]) -> Option<f64> {
     Some((1.0 - (stddev(values) / center)).clamp(0.0, 1.0))
 }
 
-pub(crate) fn timed_tokens(segment: &TranscriptSegmentInput) -> Vec<TimedToken> {
+/// Tokens of one segment with interpolated times; `segment_index` is the segment's index among
+/// all request segments and names the tokens' observation ids.
+pub(crate) fn timed_tokens(
+    segment_index: usize,
+    segment: &TranscriptSegmentInput,
+) -> Vec<TimedToken> {
     let raw_tokens = segment
         .text
         .split_whitespace()
@@ -1168,6 +1321,7 @@ pub(crate) fn timed_tokens(segment: &TranscriptSegmentInput) -> Vec<TimedToken> 
         .map(|(index, raw)| {
             let start_seconds = segment.start_seconds + step * index as f64;
             TimedToken {
+                id: String::new(),
                 raw: (*raw).to_string(),
                 normalized: normalize_token(raw),
                 start_seconds,
@@ -1175,11 +1329,15 @@ pub(crate) fn timed_tokens(segment: &TranscriptSegmentInput) -> Vec<TimedToken> 
             }
         })
         .filter(|token| !token.normalized.is_empty())
+        .enumerate()
+        .map(|(index, token)| TimedToken {
+            id: token_id(segment_index, index),
+            ..token
+        })
         .collect()
 }
 
-#[cfg(test)]
-pub(crate) fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
+fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
     let mut events = Vec::new();
     let mut index = 0;
     while index + 1 < tokens.len() {
@@ -1207,7 +1365,14 @@ pub(crate) fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
                 confidence: 0.86,
                 source: Some(EventSource::Transcript),
                 acoustic_evidence: None,
-                evidence: None,
+                evidence: Some(EventEvidence::new(
+                    format!("wordRepetition:{}", token.id),
+                    tokens[index..run_end].iter().map(|item| item.id.clone()).collect(),
+                    format!(
+                        "The same word appears {} times in a row in one final transcript segment; {INTERPOLATED_TIMING_NOTE}",
+                        run_end - index
+                    ),
+                )),
             });
             index = run_end;
             continue;
@@ -1223,7 +1388,11 @@ pub(crate) fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
                 confidence: 0.74,
                 source: Some(EventSource::Transcript),
                 acoustic_evidence: None,
-                evidence: None,
+                evidence: Some(EventEvidence::new(
+                    format!("soundRepetition:{}", token.id),
+                    vec![token.id.clone(), tokens[index + 1].id.clone()],
+                    format!("A short fragment is followed by a word starting with it in one final transcript segment; {INTERPOLATED_TIMING_NOTE}"),
+                )),
             });
             index += 2;
             continue;
@@ -1257,7 +1426,19 @@ fn detect_prolongations(tokens: &[TimedToken]) -> Vec<StutterEvent> {
                     confidence: 0.81,
                     source: Some(EventSource::Transcript),
                     acoustic_evidence: None,
-                    evidence: None,
+                    evidence: Some(if has_hyphenated_sound {
+                        EventEvidence::new(
+                            format!("hyphenatedSoundRepetition:{}", token.id),
+                            vec![token.id.clone()],
+                            format!("The transcript writes the word with two or more hyphenated sound repeats; {INTERPOLATED_TIMING_NOTE}"),
+                        )
+                    } else {
+                        EventEvidence::new(
+                            format!("prolongation:{}", token.id),
+                            vec![token.id.clone()],
+                            format!("The transcript repeats one letter {repeated} times in a row within the word; {INTERPOLATED_TIMING_NOTE}"),
+                        )
+                    }),
                 })
             } else {
                 None
@@ -1279,7 +1460,11 @@ fn detect_fillers(tokens: &[TimedToken]) -> Vec<StutterEvent> {
             confidence: 0.61,
             source: Some(EventSource::Transcript),
             acoustic_evidence: None,
-            evidence: None,
+            evidence: Some(EventEvidence::new(
+                format!("filler:{}", token.id),
+                vec![token.id.clone()],
+                format!("The transcript token is a listed filler word; {INTERPOLATED_TIMING_NOTE}"),
+            )),
         })
         .collect()
 }
@@ -1287,8 +1472,9 @@ fn detect_fillers(tokens: &[TimedToken]) -> Vec<StutterEvent> {
 fn detect_blocks(pauses: &[PauseInput]) -> Vec<StutterEvent> {
     pauses
         .iter()
-        .filter(|pause| pause.end_seconds - pause.start_seconds >= 0.75)
-        .map(|pause| StutterEvent {
+        .enumerate()
+        .filter(|(_, pause)| pause.end_seconds - pause.start_seconds >= 0.75)
+        .map(|(index, pause)| StutterEvent {
             kind: StutterKind::Block,
             start_seconds: pause.start_seconds,
             end_seconds: pause.end_seconds,
@@ -1303,7 +1489,22 @@ fn detect_blocks(pauses: &[PauseInput]) -> Vec<StutterEvent> {
             confidence: 0.66,
             source: Some(EventSource::Transcript),
             acoustic_evidence: None,
-            evidence: None,
+            evidence: Some(
+                if pause.start_seconds.is_finite() && pause.end_seconds.is_finite() {
+                    EventEvidence::new(
+                        format!("block:{}", pause_id(index)),
+                        vec![pause_id(index)],
+                        "The captured pause lasts at least 0.75 s.".to_string(),
+                    )
+                } else {
+                    // Kept as the batch detector reports it; a non-finite pause is no observation.
+                    EventEvidence::new(
+                        format!("block:{}", pause_id(index)),
+                        Vec::new(),
+                        "The captured pause has non-finite timing, so no observation supports this block.".to_string(),
+                    )
+                },
+            ),
         })
         .collect()
 }
@@ -1388,7 +1589,7 @@ fn chunk_analysis(
         .filter(|segment| segment.is_final)
         .enumerate()
         .map(|(index, segment)| {
-            let tokens = timed_tokens(segment);
+            let tokens = timed_tokens(index, segment);
             let word_count = tokens
                 .iter()
                 .filter(|token| !is_filler(&token.normalized))
