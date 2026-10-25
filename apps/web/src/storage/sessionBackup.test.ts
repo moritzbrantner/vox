@@ -373,7 +373,27 @@ describe("stored annotation shapes from the annotation workbench (vox#23)", () =
     record = annotateSession(record, revision("b", raters[1]));
     record = annotateSession(
       record,
-      revision("c", { role: "clinician", id: "C" }, { adjudicates: ["a", "b"] }),
+      revision(
+        "c",
+        { role: "clinician", id: "C" },
+        {
+          adjudicates: ["a", "b"],
+          events: [
+            {
+              kind: "block" as const,
+              startSeconds: 0.2,
+              endSeconds: 0.4,
+              certainty: "possible" as const,
+              candidateLabels: ["block", "prolongation"],
+            },
+          ],
+          adjudication: {
+            qualification: "SLT",
+            rule: "provisional-boundaries-250ms-v1",
+            decisions: [{ item: "0/0", outcome: "uncertain" }],
+          },
+        },
+      ),
     );
     const restored = parseSessionBackup(
       JSON.parse(JSON.stringify(createSessionBackup([record], new Date()))),

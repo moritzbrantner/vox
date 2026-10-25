@@ -113,35 +113,57 @@ describe("two-rater validation (vox#23)", () => {
     expect(within(declared).getByText(/Event agreement 67% \(2 vs 1 events\)/)).toBeInTheDocument();
     expect(within(declared).getByText("Only rater 1: Block 2.00–3.00 s")).toBeInTheDocument();
 
+    expect(
+      within(declared).getByText(/1 spans accepted automatically · 1 referred/),
+    ).toBeInTheDocument();
+
     await userEvent.click(within(declared).getByRole("button", { name: "Adjudicate" }));
     const adjudication = await screen.findByRole("region", { name: "Adjudicate validation" });
+    expect(
+      within(within(adjudication).getByRole("list", { name: "Accepted automatically" })).getByText(
+        "Block 0.00–1.00 s",
+      ),
+    ).toBeInTheDocument();
+    const save = within(adjudication).getByRole("button", { name: "Save adjudication" });
+    expect(save).toBeDisabled();
     // A rater cannot adjudicate their own validation.
-    await userEvent.selectOptions(
-      within(adjudication).getByLabelText("Annotating as"),
-      "clinician",
+    await userEvent.type(within(adjudication).getByLabelText("Adjudicator name"), "A");
+    expect(within(adjudication).getByText("The adjudicator must be neither rater.")).toBeVisible();
+    await userEvent.clear(within(adjudication).getByLabelText("Adjudicator name"));
+    await userEvent.type(within(adjudication).getByLabelText("Adjudicator name"), "C");
+    await userEvent.type(
+      within(adjudication).getByLabelText("Qualification"),
+      "SLT, stuttering specialist",
     );
-    await userEvent.type(within(adjudication).getByLabelText("Rater name (optional)"), "A");
-    await userEvent.click(within(adjudication).getByRole("button", { name: "Save as reference" }));
-    await screen.findByText(/Adjudication not saved: A rater cannot adjudicate/);
-
-    await userEvent.clear(within(adjudication).getByLabelText("Rater name (optional)"));
-    await userEvent.type(within(adjudication).getByLabelText("Rater name (optional)"), "C");
-    expect(within(adjudication).getByLabelText("Event 2 start")).toHaveValue("2");
-    await userEvent.click(within(adjudication).getByRole("button", { name: "Delete event 2" }));
-    await userEvent.click(within(adjudication).getByRole("button", { name: "Save as reference" }));
+    expect(within(adjudication).getByText("Decide every referred item.")).toBeVisible();
+    const item = within(adjudication).getByRole("group", { name: /Item 1: Only rater 1/ });
+    expect(within(item).queryByRole("radio", { name: "Rater 2's span" })).toBeNull();
+    await userEvent.click(within(item).getByRole("radio", { name: "Adjusted span" }));
+    await userEvent.clear(within(item).getByLabelText("Item 1 end"));
+    await userEvent.type(within(item).getByLabelText("Item 1 end"), "2.5");
+    await userEvent.selectOptions(within(item).getByLabelText("Item 1 certainty"), "possible");
+    await userEvent.click(save);
     await screen.findByText("Adjudication saved to the session");
 
     const { annotations } = stored();
     expect(annotations).toHaveLength(3);
     expect(annotations[0].events).toHaveLength(2);
+    expect(annotations[1].events).toHaveLength(1);
     expect(annotations[2]).toMatchObject({
       author: { role: "clinician", id: "C" },
       adjudicates: [annotations[0].id, annotations[1].id],
-      events: [{ kind: "block", startSeconds: 0, endSeconds: 1 }],
+      adjudication: {
+        qualification: "SLT, stuttering specialist",
+        decisions: [{ item: "1/-", outcome: "adjusted" }],
+      },
+      events: [
+        { kind: "block", startSeconds: 0, endSeconds: 1, certainty: "certain" },
+        { kind: "block", startSeconds: 2, endSeconds: 2.5, certainty: "possible" },
+      ],
     });
     expect(
       within(screen.getByRole("region", { name: "Two-rater validation" })).getByText(
-        /Adjudicated by C \(Clinician\)/,
+        /Adjudicated by C \(Clinician\) \(SLT, stuttering specialist\); it is the session's human reference/,
       ),
     ).toBeInTheDocument();
   });
