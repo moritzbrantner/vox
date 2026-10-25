@@ -110,6 +110,7 @@ fn fixture(duration_seconds: f64, include_audio: bool) -> AnalyzeSpeechRequest {
                 confidence: Some(0.94),
                 speaker_score: Some(0.98),
                 is_final: true,
+                alignment: None,
             }
         })
         .collect::<Vec<_>>();

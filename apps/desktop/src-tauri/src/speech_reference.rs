@@ -33,6 +33,7 @@ pub(crate) fn segment(text: &str, start: f64, end: f64, is_final: bool) -> Trans
         confidence: Some(0.9),
         speaker_score: None,
         is_final,
+        alignment: None,
     }
 }
 

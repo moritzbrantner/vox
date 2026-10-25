@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { isReplayable } from "@stutter-tracker/shared";
 import { isScoreWithheld } from "../audio/captureQuality";
+import { TIMING_NOT_ALIGNED } from "./TranscriptText";
 import { type ReactNode, useState } from "react";
 import {
   buildSessionHistory,
@@ -269,9 +270,15 @@ function SpeechLogPanel({ segments }: { segments: TranscriptSegment[] }) {
               className="grid grid-cols-[3.2rem_minmax(0,1fr)_minmax(4.2rem,auto)] gap-3 border-b border-[#edf1ee] px-4 py-3 last:border-b-0"
               key={`${segment.startSeconds}-${index}`}
             >
-              <time className={`break-words ${mutedTextClass}`}>
-                {formatTime(segment.startSeconds)}
-              </time>
+              {segment.alignment === "unaligned" ? (
+                <span className={`break-words text-xs ${mutedTextClass}`}>
+                  {TIMING_NOT_ALIGNED}
+                </span>
+              ) : (
+                <time className={`break-words ${mutedTextClass}`}>
+                  {formatTime(segment.startSeconds)}
+                </time>
+              )}
               <p className="m-0 break-words">{segment.text}</p>
               <span className={`break-words ${mutedTextClass}`}>
                 {segment.speakerLabel

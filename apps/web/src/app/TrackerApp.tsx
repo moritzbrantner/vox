@@ -36,6 +36,19 @@ import {
   audioFingerprint,
   type RecordingDescriptor,
   resampleSamples as sharedResampleSamples,
+  applyLiveTranscriptUpdate,
+  isUnitFinal,
+  type LiveTranscript,
+  type LiveTranscriptUpdate,
+  liveTranscriptPartialText,
+  liveTranscriptSegments,
+  markUnalignedTiming,
+  reviseTranscript,
+  startLiveTranscript,
+  type TranscriptPreprocessing,
+  type TranscriptProvenance,
+  transcriptProvenance,
+  UNKNOWN_SPOKEN_LANGUAGE,
 } from "@stutter-tracker/shared";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +64,7 @@ import { buttonClass } from "../components/styles";
 import { DashboardHeader } from "../components/DashboardHeader";
 import {
   deleteSessionAudio,
+  clockSecondsAt,
   getSessionAudio,
   type KeptSessionAudio,
   putSessionAudio,
@@ -62,6 +76,7 @@ import { InsightsSidebar } from "../components/InsightsSidebar";
 import { InterruptedCaptureNotice } from "../components/InterruptedCaptureNotice";
 import { LowerDashboard } from "../components/LowerDashboard";
 import { RecordingWorkspace } from "../components/RecordingWorkspace";
+import { TranscriptRevisionsPanel } from "../components/TranscriptRevisionsPanel";
 import { StatusMetrics } from "../components/StatusMetrics";
 import {
   BrowserRecorderError,
@@ -129,6 +144,8 @@ const TRANSCRIPTION_CHUNK_SECONDS = 8;
 /** Upper bound for browser recognition to deliver its final results after Stop. */
 const RECOGNITION_END_TIMEOUT_MS = 3_000;
 const TRANSCRIPTION_TARGET_SAMPLE_RATE = 16_000;
+/** whisper's own window: a post-session reference transcript is sent in chunks of this length. */
+const REFERENCE_CHUNK_SECONDS = 30;
 const TRANSCRIPTION_ENGINES: TranscriptionEngine[] = [
   {
     id: "browser",
@@ -238,6 +255,13 @@ export function App() {
   >({});
   // The engine and model that produced the workspace transcript; null when unknown.
   const transcriptModelRef = useRef<TranscriptionModelIdentity | null>(null);
+  // Model, language and preprocessing of the workspace transcript (vox#26); null when unknown.
+  const transcriptProvenanceRef = useRef<TranscriptProvenance | null>(null);
+  // Partial-to-final identity of the live transcript, bound to one recording run (vox#26).
+  const liveTranscriptRef = useRef<LiveTranscript>(startLiveTranscript("none"));
+  // Session ids whose reference transcript is being made.
+  const [referencePendingIds, setReferencePendingIds] = useState<string[]>([]);
+  const referencePendingRef = useRef(new Set<string>());
   const [chunkStats, setChunkStats] = useState<TranscriptionChunkStats>(() => emptyChunkStats());
   const [transcriptionChunks, setTranscriptionChunks] = useState<TranscriptionChunkRecord[]>([]);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -467,13 +491,20 @@ export function App() {
     intentPredictionsQuery.data ?? fallbackPredictSpeakerIntent(intentPredictionRequest);
 
   const downloadModelMutation = useMutation({
-    mutationFn: ({ engine, model }: { engine: TranscriptionEngineId; model: string }) =>
-      downloadTranscriptionModel(engine, model),
-    onSuccess: async (_result, { engine, model }) => {
+    mutationFn: ({
+      engine,
+      model,
+    }: {
+      engine: TranscriptionEngineId;
+      model: string;
+      /** false for a reference model, which must not change the recording selection. */
+      select?: boolean;
+    }) => downloadTranscriptionModel(engine, model),
+    onSuccess: async (_result, { engine, model, select }) => {
       setModelPreparationFailures(({ [`${engine}:${model}`]: _cleared, ...rest }) => rest);
       await queryClient.invalidateQueries({ queryKey: ["transcription-models", engine] });
       setTranscription((current) => {
-        if (current.engine !== engine) {
+        if (current.engine !== engine || select === false) {
           return current;
         }
         const next = { ...current, model };
@@ -896,6 +927,13 @@ export function App() {
       loadedSessionRef.current = null;
       setViewedSession(null);
       resetChunkTranscription();
+      liveTranscriptRef.current = startLiveTranscript(captureDescriptorRef.current.runId);
+      transcriptProvenanceRef.current = transcriptProvenance({
+        engine: selectedEngine.id,
+        model: transcriptionRef.current.model,
+        language,
+        preprocessing: provisionalPreprocessing(selectedEngine.id, recorder.sampleRate),
+      });
       setAsideUnsavedCapture();
       startedAtRef.current = new Date();
       activeSessionIdRef.current = null;
@@ -931,6 +969,26 @@ export function App() {
     }
   }
 
+  // Applies a live transcript update of the bound run; ignored updates change nothing.
+  function applyLiveUpdate(update: LiveTranscriptUpdate) {
+    const next = applyLiveTranscriptUpdate(liveTranscriptRef.current, update);
+    if (next === liveTranscriptRef.current) {
+      return;
+    }
+    liveTranscriptRef.current = next;
+    setSegments(liveTranscriptSegments(next));
+    setInterimText(liveTranscriptPartialText(next));
+  }
+
+  // Ends the live run: its late partials and finals are ignored from now on.
+  function cancelLiveTranscript() {
+    const current = liveTranscriptRef.current;
+    liveTranscriptRef.current = applyLiveTranscriptUpdate(current, {
+      kind: "cancel",
+      runId: current.runId,
+    });
+  }
+
   function startSpeechRecognition() {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
     if (!Recognition) {
@@ -941,6 +999,10 @@ export function App() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = language;
+    // Results are identified per run and per recognition start: indices restart after a restart.
+    const runId = liveTranscriptRef.current.runId;
+    let generation = 0;
+    let sequence = 0;
     recognition.onresult = (event) => {
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
@@ -948,12 +1010,19 @@ export function App() {
         if (!text) {
           continue;
         }
+        const unitId = `${generation}:${index}`;
         if (result.isFinal) {
+          const state = liveTranscriptRef.current;
+          // A repeated final or one of an earlier run must not move the timing estimate either.
+          if (state.runId !== runId || state.canceled || isUnitFinal(state, unitId)) {
+            continue;
+          }
           const endSeconds = elapsedSeconds();
           const estimatedDuration = Math.max(0.7, text.split(/\s+/).length * 0.34);
           const startSeconds = Math.max(lastFinalEndRef.current, endSeconds - estimatedDuration);
           lastFinalEndRef.current = endSeconds;
           const match = speakerMatchRef.current;
+          // Browser speech reports no timing: the estimate only orders the segment.
           const segment: TranscriptSegment = {
             text,
             startSeconds,
@@ -963,11 +1032,12 @@ export function App() {
             speakerLabel: match?.label,
             speakerScore: match?.score,
             isFinal: true,
+            alignment: "unaligned",
           };
-          setSegments((current) => [...current, segment]);
-          setInterimText("");
+          applyLiveUpdate({ kind: "final", runId, unitId, segments: [segment] });
         } else {
-          setInterimText(text);
+          sequence += 1;
+          applyLiveUpdate({ kind: "partial", runId, unitId, sequence, text });
         }
       }
     };
@@ -979,6 +1049,7 @@ export function App() {
         recognitionEndedRef.current?.();
       }
       if (isRecordingRef.current) {
+        generation += 1;
         try {
           recognition.start();
         } catch {
@@ -1327,6 +1398,15 @@ export function App() {
           inputId: UNKNOWN_INPUT_ID,
         },
         context: { spokenLanguage, task: null, condition: null },
+        transcript: transcriptProvenanceRef.current
+          ? {
+              id: crypto.randomUUID(),
+              createdAt: new Date().toISOString(),
+              kind: "provisional",
+              provenance: transcriptProvenanceRef.current,
+              supersedes: null,
+            }
+          : undefined,
       });
       try {
         persistSessions([session, ...sessionsRef.current].slice(0, 50));
@@ -1515,8 +1595,13 @@ export function App() {
           analyzer: analysis.analyzer,
           usedAudio: false,
           audioId: null,
-          // The stored transcript is reanalyzed, so its transcription model stays the same.
-          transcription: latest.analysis.transcription ?? null,
+          // The stored transcript is reanalyzed: the model that produced its current revision.
+          transcription: latest.transcript?.provenance
+            ? {
+                engine: latest.transcript.provenance.engine,
+                model: latest.transcript.provenance.model,
+              }
+            : (latest.analysis.transcription ?? null),
         },
         analysis.report,
       );
@@ -1554,6 +1639,155 @@ export function App() {
             ? "Session was deleted; nothing reanalyzed"
             : "Could not save the reanalysis: browser storage is full or unavailable",
     );
+  }
+
+  /**
+   * Post-session reference transcript (vox#26, owner answer Q3 A): re-transcribes the audio kept
+   * with a saved session with a larger whisper.cpp model the user chose, saves it as a new current
+   * transcript revision next to the provisional one and reanalyzes the session. Only on request.
+   */
+  async function createReferenceTranscript(
+    session: SavedSession,
+    audio: KeptSessionAudio,
+    model: string,
+  ) {
+    if (captureInProgress) {
+      setMessage("Stop recording before making a reference transcript");
+      return;
+    }
+    if (audio.sessionId !== session.id) {
+      return;
+    }
+    if (audio.droppedSeconds > 0) {
+      setMessage("The kept audio misses the start of the recording; no reference transcript");
+      return;
+    }
+    if (referencePendingRef.current.has(session.id)) {
+      return;
+    }
+    referencePendingRef.current.add(session.id);
+    setReferencePendingIds([...referencePendingRef.current]);
+    try {
+      const settings: TranscriptionSettings = { engine: "whisperCpp", model };
+      const prepared = await ensureReferenceModelReady(model);
+      if (!prepared) {
+        setMessage(`${model} is not available; no reference transcript made`);
+        return;
+      }
+      // Bound now: the session's own language, never the current selection.
+      const spoken = canonicalSpokenLanguage(session.context.spokenLanguage);
+      const language =
+        session.transcript?.provenance?.language ??
+        (spoken === UNKNOWN_SPOKEN_LANGUAGE ? "auto" : spoken);
+      const chunk = Math.round(audio.sampleRate * REFERENCE_CHUNK_SECONDS);
+      const segments: TranscriptSegment[] = [];
+      let detectedLanguage: string | null = null;
+      for (let start = 0; start < audio.samples.length; start += chunk) {
+        const end = Math.min(audio.samples.length, start + chunk);
+        setMessage(
+          `Reference transcript with ${model}: ${Math.round((start / audio.samples.length) * 100)}%`,
+        );
+        const samples = resampleSamples(
+          Array.from(audio.samples.subarray(start, end)),
+          audio.sampleRate,
+          TRANSCRIPTION_TARGET_SAMPLE_RATE,
+        );
+        const result = await transcribeAudio(
+          samples,
+          TRANSCRIPTION_TARGET_SAMPLE_RATE,
+          settings,
+          language,
+        );
+        detectedLanguage ??= result.language ?? null;
+        const identified = await identifyTranscriptSpeakers(
+          result.segments,
+          samples,
+          TRANSCRIPTION_TARGET_SAMPLE_RATE,
+          speakersRef.current,
+        );
+        // Chunk time to the session clock through the capture's sample index, across its gaps.
+        const clock = (seconds: number) =>
+          clockSecondsAt(
+            audio,
+            Math.min(end, start + Math.round(Math.max(0, seconds) * audio.sampleRate)),
+          );
+        segments.push(
+          ...markUnalignedTiming(identified).map((segment) =>
+            segment.alignment === "unaligned"
+              ? {
+                  ...segment,
+                  startSeconds: clock(0),
+                  endSeconds: clock(0),
+                }
+              : {
+                  ...segment,
+                  startSeconds: clock(segment.startSeconds),
+                  endSeconds: clock(segment.endSeconds),
+                },
+          ),
+        );
+      }
+      const provenance = transcriptProvenance({
+        engine: "whisperCpp",
+        model,
+        language,
+        detectedLanguage,
+        preprocessing: {
+          captureSampleRate: audio.sampleRate,
+          modelSampleRate: TRANSCRIPTION_TARGET_SAMPLE_RATE,
+          chunkSeconds: REFERENCE_CHUNK_SECONDS,
+        },
+      });
+      const revision: { record: SavedSession | null } = { record: null };
+      const saved = await updateStoredSession(
+        session.id,
+        (latest) => {
+          revision.record = reviseTranscript(
+            latest,
+            {
+              id: crypto.randomUUID(),
+              createdAt: new Date().toISOString(),
+              kind: "reference",
+              provenance,
+            },
+            segments,
+          );
+          return revision.record;
+        },
+        "reference transcript",
+      );
+      const updated = revision.record;
+      if (!saved || !updated) {
+        return;
+      }
+      // Shown only if the user is still on that session; another session is never touched.
+      if (viewedSessionRef.current?.id === updated.id) {
+        setSegments(updated.segments);
+        transcriptProvenanceRef.current = provenance;
+        transcriptModelRef.current = { engine: provenance.engine, model: provenance.model };
+      }
+      await reanalyzeSavedSession(updated);
+    } catch (error) {
+      setMessage(`Reference transcript failed: ${errorMessage(error)}`);
+    } finally {
+      referencePendingRef.current.delete(session.id);
+      setReferencePendingIds([...referencePendingRef.current]);
+    }
+  }
+
+  // Prepares a whisper.cpp model for a reference transcript without changing the recording
+  // selection. Downloads only a model the user picked for this action.
+  async function ensureReferenceModelReady(model: string) {
+    const statuses = await loadTranscriptionModels("whisperCpp");
+    const status = statuses.find((candidate) => candidate.id === model);
+    if (status?.cached) {
+      return true;
+    }
+    if (!status?.downloadable) {
+      return false;
+    }
+    setMessage(`Preparing ${model}`);
+    return downloadModel(model, "whisperCpp", false);
   }
 
   // Applies one change to the latest stored copy of a session through the mutation queue. Returns
@@ -1985,6 +2219,8 @@ export function App() {
     setReport(session.report);
     setReportRun(session.analysis);
     transcriptModelRef.current = session.analysis.transcription ?? null;
+    transcriptProvenanceRef.current = session.transcript?.provenance ?? null;
+    cancelLiveTranscript();
     sessionLanguageRef.current = session.context.spokenLanguage;
     loadedSessionRef.current = session;
     setViewedSession(session);
@@ -2077,6 +2313,7 @@ export function App() {
     resetChunkTranscription();
     // The recovered transcript keeps the model that produced it.
     transcriptModelRef.current = checkpoint.transcription ?? null;
+    transcriptProvenanceRef.current = null;
     sessionLanguageRef.current = checkpoint.language;
     loadedSessionRef.current = null;
     setViewedSession(null);
@@ -2227,6 +2464,7 @@ export function App() {
           setInterimText("");
           setSpeakerMatch(null);
           resetChunkTranscription();
+          transcriptProvenanceRef.current = null;
           activeSessionIdRef.current = null;
         }
         return analysis;
@@ -2373,7 +2611,7 @@ export function App() {
     return downloadModel(settings.model, settings.engine);
   }
 
-  async function downloadModel(model: string, engine = transcription.engine) {
+  async function downloadModel(model: string, engine = transcription.engine, select = true) {
     const key = `${engine}:${model}`;
     if (modelDownloadKeyRef.current === key && modelDownloadPromiseRef.current) {
       return modelDownloadPromiseRef.current;
@@ -2387,7 +2625,7 @@ export function App() {
     });
     setMessage(`Downloading ${model}`);
     const promise = downloadModelMutation
-      .mutateAsync({ engine, model })
+      .mutateAsync({ engine, model, select })
       .then(() => true)
       .catch(() => false)
       .finally(() => {
@@ -2402,6 +2640,7 @@ export function App() {
   }
 
   function resetChunkTranscription() {
+    cancelLiveTranscript();
     transcriptionRunIdRef.current += 1;
     transcriptModelRef.current = null;
     nextChunkStartSampleRef.current = 0;
@@ -2449,6 +2688,7 @@ export function App() {
     language: string,
   ) {
     const runId = transcriptionRunIdRef.current;
+    const liveRunId = liveTranscriptRef.current.runId;
     const chunkNumber = ++chunkIndexRef.current;
     const durationSeconds = chunkSamples.length / sampleRate;
     queuedTranscriptionTasksRef.current += 1;
@@ -2504,6 +2744,13 @@ export function App() {
           engine: result.provider ?? settings.engine,
           model: result.model ?? settings.model,
         };
+        transcriptProvenanceRef.current = transcriptProvenance({
+          engine: result.provider ?? settings.engine,
+          model: result.model ?? settings.model,
+          language,
+          detectedLanguage: result.language ?? null,
+          preprocessing: provisionalPreprocessing(settings.engine, sampleRate),
+        });
         const chunkSegments = await identifyTranscriptSpeakers(
           result.segments,
           transcriptionSamples,
@@ -2515,8 +2762,12 @@ export function App() {
           .map((segment) => segment.text)
           .join(" ")
           .trim();
-        setSegments((current) => mergeTranscriptSegments(current, offsetSegments));
-        setInterimText("");
+        applyLiveUpdate({
+          kind: "final",
+          runId: liveRunId,
+          unitId: `chunk:${chunkNumber}`,
+          segments: markUnalignedTiming(offsetSegments),
+        });
         chunkResultsRef.current.completed += 1;
         setTranscriptionChunks((current) =>
           updateTranscriptionChunk(current, chunkNumber, {
@@ -2655,6 +2906,7 @@ export function App() {
           hasAnalysisEvents={report.events.length > 0}
           level={level}
           transcript={transcript}
+          transcriptSegments={segments}
           readableTranscript={readable}
           interimText={interimText}
           canEnroll={samplesRef.current.length > 0}
@@ -2754,6 +3006,21 @@ export function App() {
           audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
           disabled={captureInProgress}
           onSave={(request) => saveAnnotation(viewedSession.id, request)}
+        />
+      )}
+      {viewedSession && !viewedSession.reviewCopy && (
+        <TranscriptRevisionsPanel
+          key={`transcripts-${viewedSession.id}`}
+          session={viewedSession}
+          audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
+          referenceAvailable={isNative || computeClient.destination.kind !== "onDevice"}
+          pending={referencePendingIds.includes(viewedSession.id)}
+          disabled={captureInProgress}
+          loadModels={() => loadTranscriptionModels("whisperCpp")}
+          onCreateReference={(model) => {
+            const audio = viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null;
+            if (audio) void createReferenceTranscript(viewedSession, audio, model);
+          }}
         />
       )}
       <ValidationPanel
@@ -2986,7 +3253,12 @@ async function transcribeAudio(
   sampleRate: number,
   settings: TranscriptionSettings,
   language: string,
-): Promise<{ segments: TranscriptSegment[]; provider?: TranscriptionEngineId; model?: string }> {
+): Promise<{
+  segments: TranscriptSegment[];
+  provider?: TranscriptionEngineId;
+  model?: string;
+  language?: string | null;
+}> {
   if (!isDesktopApp()) {
     return computeClient.transcribeAudio({
       samples,
@@ -3000,6 +3272,7 @@ async function transcribeAudio(
     segments: TranscriptSegment[];
     provider?: TranscriptionEngineId;
     model?: string;
+    language?: string | null;
   }>("transcribe_audio", {
     request: {
       samples,
@@ -3176,16 +3449,6 @@ export function offsetTranscriptSegments(
     startSeconds: segment.startSeconds + offsetSeconds,
     endSeconds: segment.endSeconds + offsetSeconds,
   }));
-}
-
-function mergeTranscriptSegments(
-  current: TranscriptSegment[],
-  incoming: TranscriptSegment[],
-): TranscriptSegment[] {
-  if (!incoming.length) {
-    return current;
-  }
-  return [...current, ...incoming].sort((left, right) => left.startSeconds - right.startSeconds);
 }
 
 function updateTranscriptionChunk(
@@ -3925,6 +4188,20 @@ function isDesktopApp() {
 
 function getTranscriptionEngine(id: TranscriptionEngineId) {
   return TRANSCRIPTION_ENGINES.find((engine) => engine.id === id) ?? TRANSCRIPTION_ENGINES[0];
+}
+
+/** What the provisional transcription did to the captured audio before the model saw it. */
+function provisionalPreprocessing(
+  engine: TranscriptionEngineId,
+  captureSampleRate: number,
+): TranscriptPreprocessing {
+  return engine === "browser"
+    ? { captureSampleRate: null, modelSampleRate: null, chunkSeconds: null }
+    : {
+        captureSampleRate,
+        modelSampleRate: TRANSCRIPTION_TARGET_SAMPLE_RATE,
+        chunkSeconds: TRANSCRIPTION_CHUNK_SECONDS,
+      };
 }
 
 function elapsedSeconds() {

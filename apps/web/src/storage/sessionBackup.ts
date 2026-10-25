@@ -2,9 +2,9 @@ import {
   type LegacySessionRecord,
   migrateSessionRecord,
   isRunCaptureQuality,
-  observationFingerprint,
   SESSION_SCHEMA_VERSION,
   TRANSCRIPTION_ENGINES,
+  transcriptObservationIds,
 } from "@stutter-tracker/shared";
 import type { SavedSession } from "../types";
 
@@ -108,20 +108,66 @@ function isSessionProvenance(value: Record<string, unknown>) {
     new Set(runIds).size === runIds.length &&
     isOptionalValidation(value.validation) &&
     isOptionalReviewCopy(value.reviewCopy) &&
+    isTranscriptHistory(value) &&
     isAnnotationHistory(
       value.annotations,
       // A review copy holds revisions made against the origin's analysis runs, which it lacks.
       value.reviewCopy === undefined ? runIds : null,
-      observationFingerprint(
-        value.segments as SavedSession["segments"],
-        value.pauses as SavedSession["pauses"],
-      ),
+      // An annotation describes the transcript revision that was current when it was made.
+      new Set(transcriptObservationIds(value as unknown as SavedSession)),
     )
   );
 }
 
+/** Optional transcript revisions: well-formed, each recorded once. */
+function isTranscriptHistory(value: Record<string, unknown>) {
+  if (value.transcript === undefined && value.priorTranscripts === undefined) {
+    return true;
+  }
+  const prior = value.priorTranscripts ?? [];
+  if (
+    !isTranscriptRevisionIdentity(value.transcript) ||
+    !Array.isArray(prior) ||
+    !prior.every(
+      (revision) =>
+        isTranscriptRevisionIdentity(revision) &&
+        Array.isArray(revision.segments) &&
+        revision.segments.every(isTranscriptSegment),
+    )
+  ) {
+    return false;
+  }
+  const ids = [...prior, value.transcript].map((revision) => (revision as { id: string }).id);
+  return new Set(ids).size === ids.length;
+}
+
+function isTranscriptRevisionIdentity(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    (value.createdAt === null || isValidDateString(value.createdAt)) &&
+    (value.kind === "provisional" || value.kind === "reference") &&
+    (value.provenance === null || isTranscriptProvenance(value.provenance)) &&
+    (value.supersedes === null || typeof value.supersedes === "string")
+  );
+}
+
+function isTranscriptProvenance(value: unknown) {
+  return (
+    isRecord(value) &&
+    TRANSCRIPTION_ENGINES.some((engine) => engine.id === value.engine) &&
+    typeof value.model === "string" &&
+    typeof value.language === "string" &&
+    (value.detectedLanguage === null || typeof value.detectedLanguage === "string") &&
+    isRecord(value.preprocessing) &&
+    Array.isArray(value.limitations) &&
+    value.limitations.every((limitation) => typeof limitation === "string")
+  );
+}
+
 /** Optional on older version-2 records; when present, ids are unique and references resolve. */
-function isAnnotationHistory(value: unknown, runIdList: string[] | null, inputId: string) {
+function isAnnotationHistory(value: unknown, runIdList: string[] | null, inputIds: Set<string>) {
   if (value === undefined) {
     return true;
   }
@@ -142,7 +188,7 @@ function isAnnotationHistory(value: unknown, runIdList: string[] | null, inputId
         revision.basedOnRunId !== null &&
         !runIds.has(revision.basedOnRunId as string)) ||
       (adjudicates !== undefined && !adjudicates.every((cited) => earlier.has(cited))) ||
-      revision.inputId !== inputId
+      !inputIds.has(revision.inputId as string)
     ) {
       return false;
     }
@@ -390,7 +436,8 @@ export function isTranscriptSegment(value: unknown) {
     isOptionalFiniteNumber(value.confidence) &&
     isOptionalString(value.speakerId) &&
     isOptionalString(value.speakerLabel) &&
-    isOptionalFiniteNumber(value.speakerScore)
+    isOptionalFiniteNumber(value.speakerScore) &&
+    (value.alignment === undefined || value.alignment === "unaligned")
   );
 }
 

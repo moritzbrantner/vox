@@ -9,6 +9,12 @@ export type TranscriptSegment = {
   speakerLabel?: string;
   speakerScore?: number;
   isFinal: boolean;
+  /**
+   * "unaligned" when the recognizer gave no timing for this text (browser speech) or its timing
+   * is unusable: `startSeconds`/`endSeconds` then only order the segment and are never shown or
+   * used to time block/prolongation events. Absent means the recognizer's own segment timing.
+   */
+  alignment?: "unaligned";
 };
 
 export type PauseSpan = {
@@ -403,7 +409,8 @@ export function fallbackAnalyze(
           ),
         );
       }
-      if (longestRun(word) >= 4) {
+      // An unaligned segment has no timing to place a prolongation in; none is invented.
+      if (longestRun(word) >= 4 && segment.alignment !== "unaligned") {
         transcriptEvents.push(
           event("prolongation", start, start + step, words[index], "Extended sound in word", 0.74),
         );
@@ -1244,5 +1251,6 @@ export * from "./validation";
 export * from "./annotationExchange";
 export * from "./comparison";
 export * from "./transcriptText";
+export * from "./transcriptRevisions";
 export * from "./consent";
 export * from "./evidenceExport";

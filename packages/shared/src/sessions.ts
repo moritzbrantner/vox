@@ -15,11 +15,12 @@ import {
   type SpokenLanguage,
   UNKNOWN_SPOKEN_LANGUAGE,
 } from "./outcomes";
+import type { TranscriptRevision, TranscriptRevisionIdentity } from "./transcriptRevisions";
 
 export const SESSION_SCHEMA_VERSION = 2;
 
 /** Bump whenever `fallbackAnalyze` output can change for the same input. */
-export const SHARED_ANALYSIS_VERSION = "2";
+export const SHARED_ANALYSIS_VERSION = "3";
 
 export type AnalyzerProducer = "onDevice" | "computeServer" | "desktopNative";
 
@@ -62,7 +63,10 @@ export type SessionRecord = {
   schemaVersion: typeof SESSION_SCHEMA_VERSION;
   id: string;
   startedAt: string;
-  /** Original observations; analysis never rewrites them. */
+  /**
+   * The current transcript revision's segments; analysis never rewrites them. A reference
+   * re-transcription replaces them through `reviseTranscript`, keeping the earlier revision.
+   */
   segments: TranscriptSegment[];
   pauses: PauseSpan[];
   context: SessionContext;
@@ -74,6 +78,10 @@ export type SessionRecord = {
   analysis: AnalysisRunIdentity;
   /** Superseded runs, oldest first. Append-only. */
   priorAnalyses: AnalysisRun[];
+  /** Identity and provenance of the current transcript; absent on older sessions. */
+  transcript?: TranscriptRevisionIdentity;
+  /** Replaced transcript revisions with their segments, oldest first. Append-only. */
+  priorTranscripts?: TranscriptRevision[];
   /** Human annotation revisions, oldest first. Append-only; analysis never changes them. */
   annotations: AnnotationRevision[];
   /** Two-rater validation declared for this session before either rater annotated it. */
@@ -201,6 +209,8 @@ export function createSessionRecord(input: {
   run: Omit<AnalysisRunIdentity, "inputId"> & { inputId?: string };
   context?: SessionContext;
   recordings?: RecordingDescriptor[];
+  /** Identity and provenance of the transcript being saved. */
+  transcript?: TranscriptRevisionIdentity;
 }): SessionRecord {
   return {
     schemaVersion: SESSION_SCHEMA_VERSION,
@@ -217,6 +227,7 @@ export function createSessionRecord(input: {
     },
     priorAnalyses: [],
     annotations: [],
+    ...(input.transcript ? { transcript: input.transcript } : {}),
   };
 }
 
@@ -471,6 +482,8 @@ export function observationFingerprint(segments: TranscriptSegment[], pauses: Pa
       segment.speakerId ?? null,
       segment.speakerLabel ?? null,
       segment.speakerScore ?? null,
+      // Only when set, so fingerprints of segments saved before alignment existed are unchanged.
+      ...(segment.alignment ? [segment.alignment] : []),
     ]),
     pauses.map((pause) => [pause.startSeconds, pause.endSeconds, pause.afterText ?? null]),
   ]);

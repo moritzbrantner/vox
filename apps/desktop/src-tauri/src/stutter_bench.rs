@@ -2001,6 +2001,7 @@ mod tests {
                     confidence: Some(0.95),
                     speaker_score: Some(0.98),
                     is_final: true,
+                    alignment: None,
                 }],
                 pauses: vec![],
                 session_started_at: None,

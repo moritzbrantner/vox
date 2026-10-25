@@ -16,10 +16,12 @@ import type {
   TranscriptionChunkSummary,
   TranscriptionModelStatus,
   TranscriptionProgressEvent,
+  TranscriptSegment,
 } from "../types";
 import { formatPercent, modelStatusLabel } from "../utils/formatting";
 import { ChunkProgressPanel } from "./ChunkProgressPanel";
 import { SessionRestoreButton } from "./SessionRestoreButton";
+import { TranscriptText } from "./TranscriptText";
 import type { SavedSession } from "../types";
 import {
   buttonClass,
@@ -52,6 +54,8 @@ type RecordingWorkspaceProps = {
   level: number;
   /** Verbatim transcript: the analysis evidence. */
   transcript: string;
+  /** The verbatim transcript's segments, shown inline with unaligned spans marked. */
+  transcriptSegments: TranscriptSegment[];
   /** Display-only rendering without fillers, repeats and fragments. */
   readableTranscript: string;
   interimText: string;
@@ -92,6 +96,7 @@ export function RecordingWorkspace({
   hasAnalysisEvents,
   level,
   transcript,
+  transcriptSegments,
   readableTranscript,
   interimText,
   canEnroll,
@@ -218,7 +223,13 @@ export function RecordingWorkspace({
           className="break-words text-xl leading-relaxed text-[#17201b] max-sm:text-lg"
           aria-label={readableView ? "Readable transcript" : "Verbatim transcript"}
         >
-          {(readableView ? readableTranscript : transcript) || "Transcript will appear here."}
+          {readableView ? (
+            readableTranscript || "Transcript will appear here."
+          ) : transcript ? (
+            <TranscriptText segments={transcriptSegments} />
+          ) : (
+            "Transcript will appear here."
+          )}
           {interimText && <span className="text-[#7b8780]"> {interimText}</span>}
         </div>
       </div>
