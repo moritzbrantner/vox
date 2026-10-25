@@ -3,6 +3,8 @@ mod prediction;
 mod speech_analysis;
 mod speech_pipeline;
 #[cfg(test)]
+mod speech_reference;
+#[cfg(test)]
 mod stutter_bench;
 mod text_analysis_transcription;
 pub mod transcription;
