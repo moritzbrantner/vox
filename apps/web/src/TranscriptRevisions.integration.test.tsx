@@ -1,5 +1,5 @@
 // vox#26: partial-to-final identity of the live transcript, unaligned spans shown without timing,
-// transcript provenance, and the user-started post-session reference transcript.
+// transcript provenance, and the automatic post-session reference transcript.
 import "fake-indexeddb/auto";
 import { fallbackAnalyze } from "@stutter-tracker/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -104,14 +104,14 @@ describe("browser speech partial-to-final identity (vox#26)", () => {
   });
 });
 
-describe("post-session reference transcript (vox#26)", () => {
-  it("re-transcribes kept audio with a larger model as a new revision, on request only", async () => {
+describe("automatic post-session reference transcript (vox#26, Q3 B)", () => {
+  // Records two seconds with whisper.cpp base.en and saves it without keeping the audio.
+  async function recordAndSave(referenceCached: boolean) {
     localStorage.setItem(
       TRANSCRIPTION_KEY,
       JSON.stringify({ engine: "whisperCpp", model: "base.en" }),
     );
     const requests: Array<{ command: string; request: Record<string, unknown> }> = [];
-    let referenceCached = false;
     const invoke = vi.spyOn(tauriCore, "invoke").mockImplementation(async (command, args) => {
       const request = (args as { request: Record<string, unknown> } | undefined)?.request ?? {};
       requests.push({ command, request });
@@ -127,10 +127,6 @@ describe("post-session reference transcript (vox#26)", () => {
             },
           ],
         };
-      }
-      if (command === "download_transcription_model") {
-        referenceCached = true;
-        return { id: request.model, label: request.model, cached: true, downloadable: true };
       }
       if (command === "transcribe_audio") {
         const text = request.model === "base.en" ? "I want water" : "I I w-want wa- water";
@@ -159,46 +155,40 @@ describe("post-session reference transcript (vox#26)", () => {
     act(() => capture!.onSamples(new Float32Array(32000).fill(0.2)));
     await userEvent.click(screen.getByRole("button", { name: /^stop$/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
-    await userEvent.click(screen.getByLabelText("Keep audio on this device for review"));
+    expect(screen.getByLabelText("Keep audio on this device for review")).not.toBeChecked();
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await screen.findByText(/audio kept on this device for review/);
-    const [provisional] = stored();
-    expect(provisional.transcript?.provenance).toMatchObject({
-      engine: "whisperCpp",
-      model: "base.en",
-      language: "en-US",
-      detectedLanguage: "en",
-      preprocessing: { captureSampleRate: 16000, modelSampleRate: 16000, chunkSeconds: 8 },
-      limitations: [],
-    });
-    // Nothing ran on its own.
-    expect(requests.filter((call) => call.request.model === "large-v3-turbo")).toEqual([]);
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    return requests;
+  }
 
-    const panel = await screen.findByRole("region", { name: "Transcript revisions" });
-    const model = await within(panel).findByLabelText("Reference model");
-    await waitFor(() =>
-      expect(
-        within(panel).getByRole("option", { name: "large-v3-turbo (download)" }),
-      ).toBeVisible(),
-    );
-    expect(model).toHaveValue("large-v3-turbo");
-    await userEvent.click(within(panel).getByRole("button", { name: "Make reference transcript" }));
+  it("re-transcribes every saved recording with the cached reference model as a new revision", async () => {
+    const requests = await recordAndSave(true);
     await waitFor(() => expect(stored()[0].transcript?.kind).toBe("reference"));
     await waitFor(() => expect(stored()[0].priorAnalyses).toHaveLength(1));
 
     const [revised] = stored();
-    expect(requests.map((call) => call.command)).toContain("download_transcription_model");
+    const provisional = revised.priorTranscripts![0];
+    expect(provisional).toMatchObject({
+      kind: "provisional",
+      segments: [expect.objectContaining({ text: "I want water" })],
+      provenance: {
+        engine: "whisperCpp",
+        model: "base.en",
+        language: "en-US",
+        detectedLanguage: "en",
+        preprocessing: { captureSampleRate: 16000, modelSampleRate: 16000, chunkSeconds: 8 },
+        limitations: [],
+      },
+    });
+    expect(requests.map((call) => call.command)).not.toContain("download_transcription_model");
     const reference = requests.filter(
       (call) => call.command === "transcribe_audio" && call.request.model === "large-v3-turbo",
     );
     expect(reference).toHaveLength(1);
     expect(reference[0].request.language).toBe("en-US");
     expect(revised.segments.map((segment) => segment.text)).toEqual(["I I w-want wa- water"]);
-    expect(revised.priorTranscripts).toEqual([
-      { ...provisional.transcript, segments: provisional.segments },
-    ]);
     expect(revised.transcript).toMatchObject({
-      supersedes: provisional.transcript!.id,
+      supersedes: provisional.id,
       provenance: { model: "large-v3-turbo", preprocessing: { chunkSeconds: 30 } },
       reconciliation: { unchangedWords: 2, insertedWords: 2, substitutedWords: 1, deletedWords: 0 },
     });
@@ -207,19 +197,37 @@ describe("post-session reference transcript (vox#26)", () => {
       engine: "whisperCpp",
       model: "large-v3-turbo",
     });
-    expect(revised.priorAnalyses[0].id).toBe(provisional.analysis.id);
     expect(
       revised.report.events.filter((event) => event.kind === "wordRepetition"),
     ).not.toHaveLength(0);
-    // The recording selection is untouched by the reference model download.
+    // The recording selection is untouched.
     expect(JSON.parse(localStorage.getItem(TRANSCRIPTION_KEY)!)).toEqual({
       engine: "whisperCpp",
       model: "base.en",
     });
     // Both revisions stay readable.
-    expect(
-      within(panel).getByRole("listitem", { name: "Provisional transcript" }),
-    ).toHaveTextContent("I want water");
+    const panel = await screen.findByRole("region", { name: "Transcript revisions" });
+    await waitFor(() =>
+      expect(
+        within(panel).getByRole("listitem", { name: "Provisional transcript" }),
+      ).toHaveTextContent("I want water"),
+    );
     expect(screen.getByLabelText("Verbatim transcript")).toHaveTextContent("I I w-want wa- water");
+  });
+
+  it("makes no reference transcript and downloads nothing when the model is not cached", async () => {
+    const requests = await recordAndSave(false);
+    const panel = await screen.findByRole("region", { name: "Transcript revisions" });
+    await waitFor(() =>
+      expect(
+        requests.filter((call) => call.command === "transcription_models").length,
+      ).toBeGreaterThan(0),
+    );
+    await waitFor(() => expect(within(panel).queryByRole("status")).toBeNull());
+    expect(within(panel).getByText(/No reference transcript\. After each recording/)).toBeVisible();
+    expect(requests.filter((call) => call.request.model === "large-v3-turbo")).toEqual([]);
+    expect(requests.map((call) => call.command)).not.toContain("download_transcription_model");
+    expect(stored()[0].transcript?.kind).toBe("provisional");
+    expect(stored()[0].priorTranscripts ?? []).toEqual([]);
   });
 });

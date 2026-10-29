@@ -134,6 +134,11 @@ pub struct TranscriptionProgressEvent {
     pub progress: Option<f32>,
 }
 
+/// Where a whisper.cpp model is stored on this device (present or not).
+pub fn whisper_cpp_model_path(model: &str) -> Result<PathBuf> {
+    Ok(WhisperCppModelStore::default().model_path(parse_whisper_cpp_model(model)?))
+}
+
 pub fn transcription_models_impl(
     request: TranscriptionModelsRequest,
 ) -> Result<TranscriptionModelsResult> {

@@ -107,6 +107,40 @@ Candidates (both promoted; reports in `docs/benchmarks/`):
 
 Runtime profiling is separate. `runtime-profiler` owns process/runtime evidence; this benchmark owns correctness semantics.
 
+## ASR challenge set (vox#26)
+
+`asr_bench.rs` scores transcription, not the detector: whether a recognizer keeps what the speaker actually said. A manifest (`docs/benchmarks/asr-challenge-set.json`) lists subsets of local audio with verbatim references and SHA-256 hashes. Subsets without data stay in it as explicit gaps.
+
+```bash
+bun run benchmark:asr:contract   # synthetic fixture, no audio or model
+python3 -I scripts/uclass-download.py --dir ~/.cache/uclass --manifest docs/benchmarks/asr-challenge-set.json
+WHISPER_CPP_SOURCE_DIR=/path/to/whisper.cpp bun run benchmark:asr transcribe \
+  --manifest docs/benchmarks/asr-challenge-set.json --root ~/.cache/uclass \
+  --model base.en --chunk-seconds 8 --out ~/.cache/uclass/runs/base.en-8s.json
+bun run benchmark:asr score --manifest docs/benchmarks/asr-challenge-set.json --root ~/.cache/uclass \
+  --baseline ~/.cache/uclass/runs/base.en-8s.json --candidate ~/.cache/uclass/runs/large-v3-turbo-30s.json \
+  --out ~/.cache/uclass/runs/report.json
+```
+
+- `transcribe` runs one whisper.cpp model through the product path (`transcribe_audio_impl`), with one call per chunk, as recording (8 s) and the post-session reference transcript (30 s) do. It records wall time, peak memory and model size. Without `WHISPER_CPP_SOURCE_DIR` the build has no whisper.cpp and transcription fails explicitly.
+- `score` refuses hypotheses made from audio whose hash differs from the manifest's. References are verified against their hashes too.
+- Reference words are classified by the UCLASS convention, where disfluent words are written in upper case. The classes are:
+  - word repetitions, recognized in any case and scored per run of copies, whichever copy the alignment keeps;
+  - part words, an upper-case fragment that starts the next word;
+  - prolongations, a letter held three or more times;
+  - other coded words;
+  - fillers.
+
+  The pronoun `I` and a sentence-initial `A` are not counted as coded. `{...}` and `(...)` annotations are dropped. Hyphenated recognizer output (`w-want`) counts as its parts.
+- The reported metrics are:
+  - preservation per class, the repeated-word deletion rate, and pooled repetition and part-word preservation (the primary number);
+  - fluent-word error rate, and inserted words per 100 reference words;
+  - on time-aligned word grids: words hallucinated inside annotated silences of at least 1 s (per minute of such silence), and the median distance from each segment start to the nearest reference word onset;
+  - real-time factor;
+  - error examples.
+- The promotion rule ignores model size. A candidate is promoted only if, on every scored subset, it gains at least 0.02 in pooled preservation, inserts no more words, and hallucinates no more in long pauses.
+- Hypotheses and reports contain corpus text. Keep them under the corpus directory. Commit only the manifest and aggregates.
+
 ## Evidence contract and cross-runtime capabilities
 
 Vox analyzes a session in one of three places. They do not produce the same outputs, and a report says which one produced it.

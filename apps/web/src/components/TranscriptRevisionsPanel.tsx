@@ -1,15 +1,14 @@
 import {
-  referenceTranscriptModels,
+  REFERENCE_TRANSCRIPT_MODEL,
+  referenceTranscriptApplies,
   sessionTranscriptRevisions,
   TRANSCRIPT_LIMITATION_LABELS,
   type TranscriptProvenance,
-  type TranscriptionModelStatus,
   type TranscriptRevision,
 } from "@stutter-tracker/shared";
-import { useEffect, useMemo, useState } from "react";
-import type { KeptSessionAudio } from "../storage/sessionAudio";
+import { useMemo } from "react";
 import type { SavedSession } from "../types";
-import { buttonClass, controlClass, cx, mutedTextClass, panelClass } from "./styles";
+import { cx, mutedTextClass, panelClass } from "./styles";
 import { TranscriptText } from "./TranscriptText";
 
 const ENGINE_LABELS: Record<TranscriptProvenance["engine"], string> = {
@@ -21,60 +20,23 @@ const ENGINE_LABELS: Record<TranscriptProvenance["engine"], string> = {
 
 /**
  * Transcript revisions of a saved session (vox#26): the current one first, earlier ones kept and
- * readable, each with its provenance; plus the user-started post-session reference transcript.
+ * readable, each with its provenance; plus the state of the automatic post-session reference
+ * transcript (owner answer Q3 B), which runs after each recording without a user action.
  */
 export function TranscriptRevisionsPanel({
   session,
-  audio,
   referenceAvailable,
   pending,
-  disabled,
-  loadModels,
-  onCreateReference,
 }: {
   session: SavedSession;
-  audio: KeptSessionAudio | null;
   /** Whether whisper.cpp can run here (desktop app or compute server). */
   referenceAvailable: boolean;
+  /** Whether this session's reference transcript is being made. */
   pending: boolean;
-  disabled: boolean;
-  loadModels: () => Promise<TranscriptionModelStatus[]>;
-  onCreateReference: (model: string) => void;
 }) {
   const revisions = useMemo(() => sessionTranscriptRevisions(session), [session]);
-  const models = useMemo(() => {
-    const provisional = revisions[0].provenance;
-    return referenceTranscriptModels(
-      provisional ?? session.analysis.transcription ?? null,
-      provisional?.language ?? session.context.spokenLanguage,
-    );
-  }, [revisions, session]);
-  const [statuses, setStatuses] = useState<TranscriptionModelStatus[] | null>(null);
-  const [model, setModel] = useState<string | null>(null);
-  const canReference = referenceAvailable && audio !== null && audio.droppedSeconds === 0;
-  useEffect(() => {
-    if (!canReference || !models.length) return;
-    let current = true;
-    loadModels().then(
-      (loaded) => {
-        if (current) setStatuses(loaded);
-      },
-      () => undefined,
-    );
-    return () => {
-      current = false;
-    };
-    // Statuses are refreshed when the panel opens and after each reference transcript.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canReference, models, pending]);
-  const cached = (id: string) => statuses?.find((status) => status.id === id)?.cached === true;
-  // Default: the largest model already on this device, else large-v3-turbo, else the largest.
-  const chosen =
-    model && models.includes(model)
-      ? model
-      : ([...models].reverse().find(cached) ??
-        (models.includes("large-v3-turbo") ? "large-v3-turbo" : models.at(-1)) ??
-        null);
+  const hasReference = revisions.some((revision) => revision.kind === "reference");
+  const provisional = revisions[0].provenance ?? session.analysis.transcription ?? null;
 
   return (
     <section className={cx(panelClass, "mb-4 p-4")} aria-labelledby="transcript-revisions-heading">
@@ -92,56 +54,20 @@ export function TranscriptRevisionsPanel({
         ))}
       </ol>
 
-      <h3 className="m-0 mt-4 mb-2 text-base">Reference transcript</h3>
-      {!referenceAvailable ? (
-        <p className={cx("m-0 text-sm", mutedTextClass)}>
-          A reference transcript needs whisper.cpp: use the desktop app or a compute server.
-        </p>
-      ) : !audio ? (
-        <p className={cx("m-0 text-sm", mutedTextClass)}>
-          This session has no kept audio, so it cannot be transcribed again.
-        </p>
-      ) : audio.droppedSeconds > 0 ? (
-        <p className={cx("m-0 text-sm", mutedTextClass)}>
-          The kept audio misses the first {audio.droppedSeconds.toFixed(0)} s of the recording, so a
-          reference transcript would not cover it.
-        </p>
-      ) : !models.length || !chosen ? (
-        <p className={cx("m-0 text-sm", mutedTextClass)}>
-          No larger whisper.cpp model than the one used is available.
+      {pending ? (
+        <p className="m-0 mt-3 text-sm" role="status">
+          Making the reference transcript with whisper.cpp {REFERENCE_TRANSCRIPT_MODEL}…
         </p>
       ) : (
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-sm">
-            Reference model
-            <select
-              className={controlClass}
-              value={chosen}
-              disabled={pending || disabled}
-              onChange={(change) => setModel(change.target.value)}
-            >
-              {models.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                  {statuses && !cached(id) ? " (download)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className={buttonClass}
-            disabled={pending || disabled}
-            onClick={() => onCreateReference(chosen)}
-          >
-            {pending ? "Making reference transcript…" : "Make reference transcript"}
-          </button>
-          <span className={cx("text-sm", mutedTextClass)}>
-            Transcribes the kept audio again with {chosen}
-            {statuses && !cached(chosen) ? " after downloading it" : ""} and saves it as a new
-            revision.
-          </span>
-        </div>
+        !hasReference && (
+          <p className={cx("m-0 mt-3 text-sm", mutedTextClass)}>
+            {!referenceTranscriptApplies(provisional)
+              ? `No reference transcript: the provisional transcript already used a model at least as large as ${REFERENCE_TRANSCRIPT_MODEL}.`
+              : !referenceAvailable
+                ? "No reference transcript: it needs whisper.cpp, in the desktop app or on a compute server."
+                : `No reference transcript. After each recording, whisper.cpp ${REFERENCE_TRANSCRIPT_MODEL} transcribes the whole recording again when that model is on this device, and saves the result as a new revision.`}
+          </p>
+        )
       )}
     </section>
   );

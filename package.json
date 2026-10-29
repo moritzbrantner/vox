@@ -28,6 +28,8 @@
     "benchmark:youtube": "bun scripts/benchmark-youtube.ts",
     "benchmark:stutter": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml stutter_bench -- --nocapture",
     "benchmark:stutter:corpus": "cargo run --release --manifest-path apps/desktop/src-tauri/Cargo.toml --bin stutter-eval --",
+    "benchmark:asr": "cargo run --release --manifest-path apps/desktop/src-tauri/Cargo.toml --bin asr-eval --",
+    "benchmark:asr:contract": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib asr_bench",
     "transcribe:youtube": "python3 scripts/transcribe-youtube.py",
     "transcribe:youtube:cuda": "python3 scripts/transcribe-youtube.py --device cuda --compute-type float16",
     "build": "turbo run build",

@@ -6,7 +6,7 @@
 // resurrect words.
 //
 // Saved: a session's transcript has revisions. The provisional transcript made while recording
-// is the first; a user-started reference re-transcription appends a new current revision and
+// is the first; the automatic post-session reference re-transcription appends a new current revision and
 // keeps every earlier one with its provenance and a word-level reconciliation.
 import type { TranscriptionEngineId, TranscriptSegment } from "./index";
 import { observationFingerprint, type SessionRecord } from "./sessions";
@@ -212,21 +212,20 @@ const WHISPER_CPP_SIZE: Record<string, number> = {
 };
 
 /**
- * whisper.cpp models a post-session reference transcript may use: larger than the provisional
- * whisper.cpp model (any size after another engine), without English-only models for other
- * languages. Smallest first.
+ * The fixed whisper.cpp model of the automatic post-session reference transcript (vox#26, owner
+ * answer Q3 B). It is multilingual, so it suits every recognition language.
  */
-export function referenceTranscriptModels(
+export const REFERENCE_TRANSCRIPT_MODEL = "large-v3-turbo";
+
+/**
+ * Whether a reference transcript adds anything: the reference model is larger than the
+ * provisional whisper.cpp model, or the provisional transcript came from another engine.
+ */
+export function referenceTranscriptApplies(
   provisional: { engine: TranscriptionEngineId; model: string } | null,
-  language: string,
-): string[] {
-  const floor =
-    provisional?.engine === "whisperCpp" ? (WHISPER_CPP_SIZE[provisional.model] ?? -1) : -1;
-  const english = baseLanguage(language) === "en";
-  return Object.entries(WHISPER_CPP_SIZE)
-    .filter(([model, size]) => size > floor && (english || !model.endsWith(".en")))
-    .sort((a, b) => a[1] - b[1])
-    .map(([model]) => model);
+): boolean {
+  if (provisional?.engine !== "whisperCpp") return true;
+  return (WHISPER_CPP_SIZE[provisional.model] ?? -1) < WHISPER_CPP_SIZE[REFERENCE_TRANSCRIPT_MODEL];
 }
 
 // ---------------------------------------------------------------------------------------------

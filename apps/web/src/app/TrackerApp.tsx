@@ -43,6 +43,8 @@ import {
   liveTranscriptPartialText,
   liveTranscriptSegments,
   markUnalignedTiming,
+  REFERENCE_TRANSCRIPT_MODEL,
+  referenceTranscriptApplies,
   reviseTranscript,
   startLiveTranscript,
   type TranscriptPreprocessing,
@@ -491,20 +493,13 @@ export function App() {
     intentPredictionsQuery.data ?? fallbackPredictSpeakerIntent(intentPredictionRequest);
 
   const downloadModelMutation = useMutation({
-    mutationFn: ({
-      engine,
-      model,
-    }: {
-      engine: TranscriptionEngineId;
-      model: string;
-      /** false for a reference model, which must not change the recording selection. */
-      select?: boolean;
-    }) => downloadTranscriptionModel(engine, model),
-    onSuccess: async (_result, { engine, model, select }) => {
+    mutationFn: ({ engine, model }: { engine: TranscriptionEngineId; model: string }) =>
+      downloadTranscriptionModel(engine, model),
+    onSuccess: async (_result, { engine, model }) => {
       setModelPreparationFailures(({ [`${engine}:${model}`]: _cleared, ...rest }) => rest);
       await queryClient.invalidateQueries({ queryKey: ["transcription-models", engine] });
       setTranscription((current) => {
-        if (current.engine !== engine || select === false) {
+        if (current.engine !== engine) {
           return current;
         }
         const next = { ...current, model };
@@ -1356,10 +1351,14 @@ export function App() {
     }
     const captureId = captureIdRef.current;
     const descriptor = captureDescriptorRef.current;
-    const keptCapture =
-      keepAudio && captureId && descriptor?.sessionId === captureId
-        ? captureForKeeping(descriptor)
-        : null;
+    // The capture's audio, kept on the device when the user asked for it; either way it feeds the
+    // automatic reference transcript of this recording.
+    const capturedAudio =
+      captureId && descriptor?.sessionId === captureId ? captureForKeeping(descriptor) : null;
+    const keptCapture = keepAudio ? capturedAudio : null;
+    const reference: { saved: { session: SavedSession; audio: KeptSessionAudio } | null } = {
+      saved: null,
+    };
     const startedAt = startedAtRef.current?.toISOString() ?? new Date().toISOString();
     const spokenLanguage = canonicalSpokenLanguage(sessionLanguageRef.current);
     newSessionSavePendingRef.current = true;
@@ -1422,6 +1421,12 @@ export function App() {
       // Later saves of this workspace append runs to this record instead of creating copies.
       loadedSessionRef.current = session;
       setViewedSession(session);
+      if (capturedAudio) {
+        reference.saved = {
+          session,
+          audio: { ...capturedAudio, sessionId: session.id, keptAt: new Date().toISOString() },
+        };
+      }
       if (keptCapture) {
         const kept = { ...keptCapture, sessionId: session.id, keptAt: new Date().toISOString() };
         try {
@@ -1464,6 +1469,9 @@ export function App() {
               : "Session saved locally") +
         (outcome === "corpus" || outcome === "local" ? audioNote : ""),
     );
+    if ((outcome === "corpus" || outcome === "local") && reference.saved) {
+      void startReferenceTranscript(reference.saved.session, reference.saved.audio);
+    }
   }
 
   // The raw capture as the workspace holds it, with what is needed to place it on the session
@@ -1642,24 +1650,23 @@ export function App() {
   }
 
   /**
-   * Post-session reference transcript (vox#26, owner answer Q3 A): re-transcribes the audio kept
-   * with a saved session with a larger whisper.cpp model the user chose, saves it as a new current
-   * transcript revision next to the provisional one and reanalyzes the session. Only on request.
+   * Automatic post-session reference transcript (vox#26, owner answer Q3 B): after a recording is
+   * saved, its whole audio is transcribed again with the fixed REFERENCE_TRANSCRIPT_MODEL when
+   * whisper.cpp can run here, that model is already on this device and it is larger than the
+   * provisional model. The result is saved as a new current transcript revision next to the
+   * provisional one and the session is reanalyzed. Nothing is downloaded for it.
    */
-  async function createReferenceTranscript(
-    session: SavedSession,
-    audio: KeptSessionAudio,
-    model: string,
-  ) {
-    if (captureInProgress) {
-      setMessage("Stop recording before making a reference transcript");
-      return;
-    }
-    if (audio.sessionId !== session.id) {
-      return;
-    }
-    if (audio.droppedSeconds > 0) {
-      setMessage("The kept audio misses the start of the recording; no reference transcript");
+  async function startReferenceTranscript(session: SavedSession, audio: KeptSessionAudio) {
+    const model = REFERENCE_TRANSCRIPT_MODEL;
+    if (
+      !(isNative || computeClient.destination.kind !== "onDevice") ||
+      audio.sessionId !== session.id ||
+      // A rolling capture window lost the start; a reference would not cover the recording.
+      audio.droppedSeconds > 0 ||
+      !referenceTranscriptApplies(
+        session.transcript?.provenance ?? session.analysis.transcription ?? null,
+      )
+    ) {
       return;
     }
     if (referencePendingRef.current.has(session.id)) {
@@ -1669,9 +1676,8 @@ export function App() {
     setReferencePendingIds([...referencePendingRef.current]);
     try {
       const settings: TranscriptionSettings = { engine: "whisperCpp", model };
-      const prepared = await ensureReferenceModelReady(model);
-      if (!prepared) {
-        setMessage(`${model} is not available; no reference transcript made`);
+      const statuses = await loadTranscriptionModels("whisperCpp").catch(() => []);
+      if (!statuses.some((status) => status.id === model && status.cached)) {
         return;
       }
       // Bound now: the session's own language, never the current selection.
@@ -1773,21 +1779,6 @@ export function App() {
       referencePendingRef.current.delete(session.id);
       setReferencePendingIds([...referencePendingRef.current]);
     }
-  }
-
-  // Prepares a whisper.cpp model for a reference transcript without changing the recording
-  // selection. Downloads only a model the user picked for this action.
-  async function ensureReferenceModelReady(model: string) {
-    const statuses = await loadTranscriptionModels("whisperCpp");
-    const status = statuses.find((candidate) => candidate.id === model);
-    if (status?.cached) {
-      return true;
-    }
-    if (!status?.downloadable) {
-      return false;
-    }
-    setMessage(`Preparing ${model}`);
-    return downloadModel(model, "whisperCpp", false);
   }
 
   // Applies one change to the latest stored copy of a session through the mutation queue. Returns
@@ -2611,7 +2602,7 @@ export function App() {
     return downloadModel(settings.model, settings.engine);
   }
 
-  async function downloadModel(model: string, engine = transcription.engine, select = true) {
+  async function downloadModel(model: string, engine = transcription.engine) {
     const key = `${engine}:${model}`;
     if (modelDownloadKeyRef.current === key && modelDownloadPromiseRef.current) {
       return modelDownloadPromiseRef.current;
@@ -2625,7 +2616,7 @@ export function App() {
     });
     setMessage(`Downloading ${model}`);
     const promise = downloadModelMutation
-      .mutateAsync({ engine, model, select })
+      .mutateAsync({ engine, model })
       .then(() => true)
       .catch(() => false)
       .finally(() => {
@@ -3012,15 +3003,8 @@ export function App() {
         <TranscriptRevisionsPanel
           key={`transcripts-${viewedSession.id}`}
           session={viewedSession}
-          audio={viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null}
           referenceAvailable={isNative || computeClient.destination.kind !== "onDevice"}
           pending={referencePendingIds.includes(viewedSession.id)}
-          disabled={captureInProgress}
-          loadModels={() => loadTranscriptionModels("whisperCpp")}
-          onCreateReference={(model) => {
-            const audio = viewedAudio?.sessionId === viewedSession.id ? viewedAudio : null;
-            if (audio) void createReferenceTranscript(viewedSession, audio, model);
-          }}
         />
       )}
       <ValidationPanel

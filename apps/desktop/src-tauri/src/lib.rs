@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod asr_bench;
 mod corpus;
 mod prediction;
 mod speech_analysis;
