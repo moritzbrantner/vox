@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "name": "synthetic-asr-challenge",
+  "sources": [
+    {
+      "id": "synthetic",
+      "description": "Hand-written references and hypotheses that exercise every metric; no audio",
+      "url": null,
+      "terms": "Part of this repository"
+    }
+  ],
+  "subsets": [
+    {
+      "id": "synthetic-repetitions",
+      "kind": "repetitionsPartialWords",
+      "description": "Word repetitions, a part word, fillers and coded words in UCLASS notation",
+      "items": [
+        {
+          "id": "repetitions",
+          "source": "synthetic",
+          "audio": "repetitions.wav",
+          "audioSha256": "synthetic-repetitions-audio",
+          "durationSeconds": 10.0,
+          "reference": "repetitions.txt",
+          "referenceSha256": "synthetic-repetitions-reference",
+          "referenceFormat": "verbatimText",
+          "language": "en"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-pauses",
+      "kind": "longPauses",
+      "description": "A time-aligned word grid with one long pause",
+      "items": [
+        {
+          "id": "pauses",
+          "source": "synthetic",
+          "audio": "pauses.wav",
+          "audioSha256": "synthetic-pauses-audio",
+          "durationSeconds": 6.0,
+          "reference": "pauses.word.grid",
+          "referenceSha256": "synthetic-pauses-reference",
+          "referenceFormat": "uclassWordGrid",
+          "language": "en"
+        }
+      ]
+    },
+    {
+      "id": "quiet-speech",
+      "kind": "quietSpeech",
+      "description": "Quiet speech",
+      "gap": "no quiet-speech recordings in the challenge set"
+    }
+  ]
+}

@@ -9,7 +9,8 @@ import {
   liveTranscriptSegments,
   markUnalignedTiming,
   reconcileTranscripts,
-  referenceTranscriptModels,
+  REFERENCE_TRANSCRIPT_MODEL,
+  referenceTranscriptApplies,
   reviseTranscript,
   sessionTranscriptRevisions,
   startLiveTranscript,
@@ -173,21 +174,15 @@ describe("provenance", () => {
     ).toEqual([]);
   });
 
-  test("reference models are larger whisper.cpp models suited to the language", () => {
-    expect(referenceTranscriptModels({ engine: "whisperCpp", model: "small.en" }, "en-US")).toEqual(
-      ["medium.en", "medium", "large-v3-turbo", "large-v3"],
+  test("the fixed reference model applies only when it is larger than the provisional one", () => {
+    expect(REFERENCE_TRANSCRIPT_MODEL).toBe("large-v3-turbo");
+    expect(referenceTranscriptApplies({ engine: "whisperCpp", model: "small.en" })).toBe(true);
+    expect(referenceTranscriptApplies({ engine: "browser", model: "default" })).toBe(true);
+    expect(referenceTranscriptApplies(null)).toBe(true);
+    expect(referenceTranscriptApplies({ engine: "whisperCpp", model: "large-v3-turbo" })).toBe(
+      false,
     );
-    expect(referenceTranscriptModels({ engine: "browser", model: "default" }, "de-DE")).toEqual([
-      "tiny",
-      "base",
-      "small",
-      "medium",
-      "large-v3-turbo",
-      "large-v3",
-    ]);
-    expect(referenceTranscriptModels({ engine: "whisperCpp", model: "large-v3" }, "en-US")).toEqual(
-      [],
-    );
+    expect(referenceTranscriptApplies({ engine: "whisperCpp", model: "large-v3" })).toBe(false);
   });
 });
 

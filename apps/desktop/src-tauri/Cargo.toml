@@ -16,6 +16,12 @@ name = "stutter-eval"
 path = "src/bin/stutter-eval.rs"
 test = false
 
+# The ASR challenge-set runner includes asr_bench.rs, whose tests run in the library harness.
+[[bin]]
+name = "asr-eval"
+path = "src/bin/asr-eval.rs"
+test = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

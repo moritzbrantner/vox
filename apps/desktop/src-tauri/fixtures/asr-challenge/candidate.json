@@ -1,0 +1,33 @@
+{
+  "engine": "whisperCpp",
+  "model": "synthetic-candidate",
+  "modelBytes": 1000,
+  "language": "en",
+  "chunkSeconds": 30.0,
+  "threads": 1,
+  "peakRssBytes": 5000,
+  "items": [
+    {
+      "subset": "synthetic-repetitions",
+      "item": "repetitions",
+      "audioSha256": "synthetic-repetitions-audio",
+      "audioSeconds": 10.0,
+      "wallSeconds": 4.0,
+      "segments": [
+        { "text": "Um, I I want and and a play playstation.", "startSeconds": 0.0, "endSeconds": 5.0 },
+        { "text": "Um, then then we went.", "startSeconds": 5.0, "endSeconds": 8.0 }
+      ]
+    },
+    {
+      "subset": "synthetic-pauses",
+      "item": "pauses",
+      "audioSha256": "synthetic-pauses-audio",
+      "audioSeconds": 6.0,
+      "wallSeconds": 2.0,
+      "segments": [
+        { "text": "Hello.", "startSeconds": 0.0, "endSeconds": 1.0 },
+        { "text": "Friend, um, yes.", "startSeconds": 3.0, "endSeconds": 5.0 }
+      ]
+    }
+  ]
+}
