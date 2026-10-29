@@ -13,8 +13,8 @@ use serde::Serialize;
 
 use crate::speech_analysis::{
     analyze_with_evidence, timed_tokens, AcousticObservations, AnalysisReport,
-    AnalyzeSpeechRequest, EvidencePolicy, SpeechAnalysisError, StutterEvent, StutterKind,
-    TimedToken, PRODUCT_EVIDENCE_POLICY,
+    AnalyzeSpeechRequest, Detector, SpeechAnalysisError, StutterEvent, StutterKind, TimedToken,
+    PRODUCT_DETECTOR,
 };
 
 /// Appended to the explanation of every event that rests on transcript token times.
@@ -125,6 +125,9 @@ pub(crate) fn pause_id(index: usize) -> String {
     format!("pause:{index}")
 }
 
+/// The supplied audio as a whole.
+pub(crate) const AUDIO_OBSERVATION_ID: &str = "audio:0";
+
 pub(crate) fn speech_id(index: usize) -> String {
     format!("acoustic:speech:{index}")
 }
@@ -197,17 +200,17 @@ pub(crate) fn native_capabilities() -> AnalysisCapabilities {
 pub(crate) fn analyze_speech_session(
     request: AnalyzeSpeechRequest,
 ) -> Result<AnalysisReport, SpeechAnalysisError> {
-    analyze_speech_session_with(request, PRODUCT_EVIDENCE_POLICY)
+    analyze_speech_session_with(request, PRODUCT_DETECTOR)
 }
 
-/// `analyze_speech_session` under an explicit evidence policy (the benchmark compares them).
+/// `analyze_speech_session` with an explicit detector configuration (the benchmark compares them).
 pub(crate) fn analyze_speech_session_with(
     request: AnalyzeSpeechRequest,
-    policy: EvidencePolicy,
+    detector: Detector,
 ) -> Result<AnalysisReport, SpeechAnalysisError> {
     let observations = collect_transcript_and_pause_observations(&request)?;
     let audio = audio_window(&request);
-    let (mut report, acoustic) = analyze_with_evidence(request, policy)?;
+    let (mut report, acoustic) = analyze_with_evidence(request, detector)?;
     let mut observations = observations;
     observations.extend(acoustic_observations(audio, acoustic.as_ref()));
     observations.extend(missing_observations(
@@ -304,7 +307,7 @@ fn acoustic_observations(
     let mut observations = Vec::new();
     if let Some((sample_count, sample_rate)) = audio {
         observations.push(Observation {
-            id: "audio:0".to_string(),
+            id: AUDIO_OBSERVATION_ID.to_string(),
             channel: ObservationChannel::Acoustic,
             start_seconds: 0.0,
             end_seconds: sample_count as f64 / f64::from(sample_rate),

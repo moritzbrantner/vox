@@ -1,6 +1,6 @@
 {
   "empty": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -40,7 +40,7 @@
       "speechDurationSeconds": -0.0,
       "voiceActivityRatio": -0.0
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -116,7 +116,7 @@
     "wordCount": 3
   },
   "incomplete/audio too short": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -192,7 +192,7 @@
     "wordCount": 2
   },
   "incomplete/transcript without audio": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -249,7 +249,7 @@
     "wordCount": 3
   },
   "invalid/inverted segment": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -309,7 +309,7 @@
     "error": "segment times must be finite"
   },
   "invalid/non-finite partial segment": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -366,7 +366,7 @@
     "wordCount": 2
   },
   "invalid/non-finite pause": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": null,
       "blockCount": 1,
@@ -442,7 +442,7 @@
       "speechDurationSeconds": 1.2399999999999998,
       "voiceActivityRatio": 0.6526315789473683
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.7999999999999999,
       "blockCount": 1,
@@ -507,17 +507,17 @@
     "events": [
       {
         "acousticEvidence": {
-          "energyRms": 0.27489060163497925,
+          "energyRms": 0.28281774705853957,
           "onsetCount": 0,
           "onsetRate": 0.0,
-          "pitchMeanHz": 219.99993591308595,
-          "pitchStability": 0.99998332896913,
-          "spectralCentroidHz": 219.60258305867512,
-          "zeroCrossingRate": 0.026896311760612388
+          "pitchMeanHz": 219.99972534179688,
+          "pitchStability": 0.999985096228154,
+          "spectralCentroidHz": 220.01803509942417,
+          "zeroCrossingRate": 0.027319847383197753
         },
-        "confidence": 0.699999988079071,
-        "detail": "0.6s stable voiced stretch",
-        "endSeconds": 0.62,
+        "confidence": 0.6000000238418579,
+        "detail": "0.6s sustained sound",
+        "endSeconds": 0.6,
         "kind": "prolongation",
         "source": "acoustic",
         "startSeconds": 0.0,
@@ -540,20 +540,20 @@
       },
       {
         "acousticEvidence": {
-          "energyRms": 0.2827714681625366,
-          "onsetCount": 1,
-          "onsetRate": 1.612903225806452,
-          "pitchMeanHz": 219.99993260701498,
-          "pitchStability": 0.9999835755348545,
-          "spectralCentroidHz": 219.70646286010742,
-          "zeroCrossingRate": 0.026826722338204597
+          "energyRms": 0.28281774705853957,
+          "onsetCount": 0,
+          "onsetRate": 0.0,
+          "pitchMeanHz": 219.99972534179688,
+          "pitchStability": 0.999985096228154,
+          "spectralCentroidHz": 220.01803509942417,
+          "zeroCrossingRate": 0.027319847383197753
         },
-        "confidence": 0.699999988079071,
-        "detail": "0.6s stable voiced stretch",
+        "confidence": 0.6000000238418579,
+        "detail": "0.6s sustained sound",
         "endSeconds": 1.9,
         "kind": "prolongation",
         "source": "acoustic",
-        "startSeconds": 1.28,
+        "startSeconds": 1.3,
         "text": "then"
       }
     ],
@@ -585,7 +585,7 @@
       "speechDurationSeconds": 0.9,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -635,7 +635,7 @@
     "events": [
       {
         "acousticEvidence": {
-          "energyRms": 0.2828647792339325,
+          "energyRms": 0.28285448117689654,
           "onsetCount": 0,
           "onsetRate": 0.0,
           "pitchMeanHz": 179.99976886402476,
@@ -643,8 +643,8 @@
           "spectralCentroidHz": 180.01919278231534,
           "zeroCrossingRate": 0.022110457392294586
         },
-        "confidence": 0.9800000190734863,
-        "detail": "Extended sound in word; 0.9s stable voiced stretch",
+        "confidence": 0.9300000071525574,
+        "detail": "Extended sound in word; 0.9s sustained sound",
         "endSeconds": 0.9,
         "kind": "prolongation",
         "source": "fused",
@@ -680,7 +680,7 @@
       "speechDurationSeconds": 0.42,
       "voiceActivityRatio": 0.7
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -772,7 +772,7 @@
       "speechDurationSeconds": 0.9,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -822,7 +822,7 @@
     "events": [
       {
         "acousticEvidence": {
-          "energyRms": 0.2825121283531189,
+          "energyRms": 0.2825016321783716,
           "onsetCount": 0,
           "onsetRate": 0.0,
           "pitchMeanHz": 179.99994988874957,
@@ -830,8 +830,8 @@
           "spectralCentroidHz": 180.03109221024945,
           "zeroCrossingRate": 0.022110457392294586
         },
-        "confidence": 0.9800000190734863,
-        "detail": "Extended sound in word; 0.9s stable voiced stretch",
+        "confidence": 0.9300000071525574,
+        "detail": "Extended sound in word; 0.9s sustained sound",
         "endSeconds": 0.9,
         "kind": "prolongation",
         "source": "fused",
@@ -867,7 +867,7 @@
       "speechDurationSeconds": 2.0,
       "voiceActivityRatio": 1.0
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 1.2000000000000002,
       "blockCount": 1,
@@ -918,7 +918,7 @@
     "events": [
       {
         "acousticEvidence": {
-          "energyRms": 0.2828427255153656,
+          "energyRms": 0.282842710915238,
           "onsetCount": 0,
           "onsetRate": 0.0,
           "pitchMeanHz": 199.99379845821497,
@@ -926,8 +926,8 @@
           "spectralCentroidHz": 199.98978231410788,
           "zeroCrossingRate": 0.023470614284810433
         },
-        "confidence": 0.8500000238418579,
-        "detail": "2.0s stable voiced stretch",
+        "confidence": 0.75,
+        "detail": "2.0s sustained sound",
         "endSeconds": 2.0,
         "kind": "prolongation",
         "source": "acoustic",
@@ -962,7 +962,7 @@
     "wordCount": 1
   },
   "partial and final": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1019,7 +1019,7 @@
     "wordCount": 3
   },
   "partial only": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 1.0,
       "blockCount": 1,
@@ -1071,7 +1071,7 @@
       "speechDurationSeconds": 0.42,
       "voiceActivityRatio": 0.7
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1148,7 +1148,7 @@
     "wordCount": 0
   },
   "repetitions/transcript": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
@@ -1313,7 +1313,7 @@
     "wordCount": 16
   },
   "silence/pause only": {
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 3.0,
       "blockCount": 1,
@@ -1365,7 +1365,7 @@
       "speechDurationSeconds": -0.0,
       "voiceActivityRatio": -0.0
     },
-    "analyzerVersion": "2",
+    "analyzerVersion": "3",
     "blockerStats": {
       "averageBlockSeconds": 0.0,
       "blockCount": 0,
