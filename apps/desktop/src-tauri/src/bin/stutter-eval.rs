@@ -24,7 +24,7 @@ mod speech_reference;
 #[path = "../stutter_bench.rs"]
 mod stutter_bench;
 
-const USAGE: &str = "usage: stutter-eval --labels <labels.csv> --clips <clips dir> [--speakers <clipId,speakerId csv>] [--vote-threshold 1-3] [--limit N] [--candidate withhold-audio-only-sound-repetitions [--compare-on train|held-out]] [--out report.json]";
+const USAGE: &str = "usage: stutter-eval --labels <labels.csv> --clips <clips dir> [--speakers <clipId,speakerId csv>] [--vote-threshold 1-3] [--limit N] [--candidate withhold-audio-only-sound-repetitions|spectral-stationarity-prolongations [--compare-on train|held-out]] [--out report.json]";
 
 fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {

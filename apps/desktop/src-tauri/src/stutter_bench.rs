@@ -5,7 +5,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::speech_analysis::{
-    AnalysisReport, AnalyzeSpeechRequest, EvidencePolicy, SpeechAnalysisError, StutterKind,
+    AnalysisReport, AnalyzeSpeechRequest, Detector, ProlongationRule, SpeechAnalysisError,
+    StutterKind, PRODUCT_DETECTOR,
 };
 
 const BENCHMARK_KINDS: [StutterKind; 5] = [
@@ -379,7 +380,7 @@ fn evaluate_existing_detector(cases: &[BaselineCase]) -> Result<BenchmarkReport,
     for case in cases {
         let report = crate::speech_pipeline::analyze_speech_session_with(
             case.request.clone(),
-            EvidencePolicy::WithholdAudioOnlySoundRepetitions,
+            PRODUCT_DETECTOR,
         )
         .map_err(|error| BenchmarkError::Detector(error.to_string()))?;
         clips.push(BenchmarkClip {
@@ -395,40 +396,61 @@ fn evaluate_existing_detector(cases: &[BaselineCase]) -> Result<BenchmarkReport,
     evaluate_clips(&clips)
 }
 
-/// Both detectors' clip-level outputs from one analysis under
-/// `EvidencePolicy::WithholdAudioOnlySoundRepetitions`. Withholding only partitions the fused
-/// events, so the existing detector (`ReportAll`) predicts every reported or withheld kind, and
-/// the candidate predicts the reported kinds and abstains on the withheld ones.
+/// Both detectors' clip-level outputs. A detector predicts the kinds it reports as events and
+/// abstains on the kinds it only withholds as insufficient evidence.
 struct DetectorOutputs {
     baseline_predicted: Vec<StutterKind>,
+    baseline_abstained: Vec<StutterKind>,
     candidate_predicted: Vec<StutterKind>,
     candidate_abstained: Vec<StutterKind>,
 }
 
+/// The kinds a report predicts and the kinds it abstains on.
+fn reported_and_withheld(report: &AnalysisReport) -> (HashSet<StutterKind>, HashSet<StutterKind>) {
+    let reported = report
+        .events
+        .iter()
+        .map(|event| event.kind)
+        .collect::<HashSet<_>>();
+    let withheld = report
+        .insufficient_evidence
+        .iter()
+        .map(|possible| possible.candidate.kind)
+        .filter(|kind| !reported.contains(kind))
+        .collect::<HashSet<_>>();
+    (reported, withheld)
+}
+
+fn benchmark_kinds(set: &HashSet<StutterKind>) -> Vec<StutterKind> {
+    BENCHMARK_KINDS
+        .into_iter()
+        .filter(|kind| set.contains(kind))
+        .collect()
+}
+
 impl DetectorOutputs {
+    /// `withhold-audio-only-sound-repetitions` from one product analysis. Withholding only
+    /// partitions the fused events, so the detector before withholding (`ReportAll`) predicts
+    /// every reported or withheld kind, and the candidate abstains on the withheld ones.
     fn of(report: &AnalysisReport) -> Self {
-        let reported = report
-            .events
-            .iter()
-            .map(|event| event.kind)
-            .collect::<HashSet<_>>();
-        let withheld = report
-            .insufficient_evidence
-            .iter()
-            .map(|possible| possible.candidate.kind)
-            .collect::<HashSet<_>>();
-        let kinds = |set: &dyn Fn(StutterKind) -> bool| {
-            BENCHMARK_KINDS
-                .into_iter()
-                .filter(|kind| set(*kind))
-                .collect::<Vec<_>>()
-        };
+        let (reported, withheld) = reported_and_withheld(report);
         Self {
-            baseline_predicted: kinds(&|kind| reported.contains(&kind) || withheld.contains(&kind)),
-            candidate_predicted: kinds(&|kind| reported.contains(&kind)),
-            candidate_abstained: kinds(&|kind| {
-                !reported.contains(&kind) && withheld.contains(&kind)
-            }),
+            baseline_predicted: benchmark_kinds(&reported.union(&withheld).copied().collect()),
+            baseline_abstained: Vec::new(),
+            candidate_predicted: benchmark_kinds(&reported),
+            candidate_abstained: benchmark_kinds(&withheld),
+        }
+    }
+
+    /// Two analyses of the same clip under different detector configurations.
+    fn of_two(baseline: &AnalysisReport, candidate: &AnalysisReport) -> Self {
+        let (baseline_reported, baseline_withheld) = reported_and_withheld(baseline);
+        let (candidate_reported, candidate_withheld) = reported_and_withheld(candidate);
+        Self {
+            baseline_predicted: benchmark_kinds(&baseline_reported),
+            baseline_abstained: benchmark_kinds(&baseline_withheld),
+            candidate_predicted: benchmark_kinds(&candidate_reported),
+            candidate_abstained: benchmark_kinds(&candidate_withheld),
         }
     }
 }
@@ -560,17 +582,27 @@ pub(crate) struct CorpusRunOptions {
 pub(crate) enum Candidate {
     /// Audio-only sound repetitions are withheld as insufficient evidence (#27).
     WithholdAudioOnlySoundRepetitions,
+    /// Audio prolongations as spectrally stationary stretches
+    /// (`ProlongationRule::SpectralStationarity`) instead of long speech-activity intervals;
+    /// the baseline is the product detector with `ProlongationRule::SpeechInterval` (#27).
+    SpectralStationarityProlongations,
 }
 
 impl Candidate {
     pub(crate) fn parse(value: &str) -> Option<Self> {
-        (value == "withhold-audio-only-sound-repetitions")
-            .then_some(Self::WithholdAudioOnlySoundRepetitions)
+        match value {
+            "withhold-audio-only-sound-repetitions" => {
+                Some(Self::WithholdAudioOnlySoundRepetitions)
+            }
+            "spectral-stationarity-prolongations" => Some(Self::SpectralStationarityProlongations),
+            _ => None,
+        }
     }
 
     fn name(self) -> &'static str {
         match self {
             Self::WithholdAudioOnlySoundRepetitions => "withholdAudioOnlySoundRepetitions",
+            Self::SpectralStationarityProlongations => "spectralStationarityProlongations",
         }
     }
 }
@@ -797,7 +829,7 @@ pub(crate) fn run_sep28k_corpus(
                 .all(|reason| CHALLENGE_REASONS.contains(reason))
             {
                 counts.challenge_rows += 1;
-                match score_clip(&options.clips_dir, entry, stop - start)? {
+                match score_clip(&options.clips_dir, entry, stop - start, options.candidate)? {
                     ClipOutcome::Scored(pair, digest) => {
                         let (baseline, candidate) = *pair;
                         challenge_digests.push(digest);
@@ -811,7 +843,7 @@ pub(crate) fn run_sep28k_corpus(
             }
             continue;
         }
-        match score_clip(&options.clips_dir, entry, stop - start)? {
+        match score_clip(&options.clips_dir, entry, stop - start, options.candidate)? {
             ClipOutcome::Scored(pair, digest) => {
                 let (baseline, candidate) = *pair;
                 audio_digests.push(digest);
@@ -1281,7 +1313,10 @@ fn paired_comparison(
     );
     let coverage_cost = BENCHMARK_KINDS
         .into_iter()
-        .filter(|kind| candidate_report.by_kind[kind].abstained > 0)
+        // Only abstentions the candidate adds cost coverage; both detectors may withhold a kind.
+        .filter(|kind| {
+            candidate_report.by_kind[kind].abstained > baseline_report.by_kind[kind].abstained
+        })
         .map(|kind| {
             let cand = &candidate_report.by_kind[&kind];
             (
@@ -1493,6 +1528,7 @@ fn score_clip(
     clips_dir: &Path,
     entry: Sep28kManifestEntry,
     labelled_samples: u64,
+    candidate: Option<Candidate>,
 ) -> Result<ClipOutcome, BenchmarkError> {
     let path = sep28k_clip_path(clips_dir, &entry);
     if !path.is_file() {
@@ -1511,22 +1547,41 @@ fn score_clip(
     if (duration_seconds - expected_seconds).abs() > expected_seconds * DURATION_TOLERANCE {
         return Ok(ClipOutcome::Unreadable(entry.id));
     }
-    let report = match crate::speech_pipeline::analyze_speech_session_with(
-        AnalyzeSpeechRequest {
-            segments: Vec::new(),
-            pauses: Vec::new(),
-            session_started_at: None,
-            samples: Some(samples),
-            sample_rate: Some(sample_rate),
-        },
-        EvidencePolicy::WithholdAudioOnlySoundRepetitions,
-    ) {
-        Ok(report) => report,
-        // Input validation (too short, non-finite samples): this clip is unusable, not the run.
-        Err(SpeechAnalysisError::Invalid(_)) => return Ok(ClipOutcome::Unreadable(entry.id)),
-        Err(error) => return Err(BenchmarkError::Detector(error.to_string())),
+    let request = AnalyzeSpeechRequest {
+        segments: Vec::new(),
+        pauses: Vec::new(),
+        session_started_at: None,
+        samples: Some(samples),
+        sample_rate: Some(sample_rate),
     };
-    let outputs = DetectorOutputs::of(&report);
+    let analyze = |detector: Detector| {
+        match crate::speech_pipeline::analyze_speech_session_with(request.clone(), detector) {
+            Ok(report) => Ok(Some(report)),
+            // Input validation (too short, non-finite samples): this clip is unusable, not the run.
+            Err(SpeechAnalysisError::Invalid(_)) => Ok(None),
+            Err(error) => Err(BenchmarkError::Detector(error.to_string())),
+        }
+    };
+    let outputs = match candidate {
+        Some(Candidate::SpectralStationarityProlongations) => {
+            let (Some(baseline), Some(candidate)) = (
+                analyze(Detector {
+                    prolongation: ProlongationRule::SpeechInterval,
+                    ..PRODUCT_DETECTOR
+                })?,
+                analyze(PRODUCT_DETECTOR)?,
+            ) else {
+                return Ok(ClipOutcome::Unreadable(entry.id));
+            };
+            DetectorOutputs::of_two(&baseline, &candidate)
+        }
+        Some(Candidate::WithholdAudioOnlySoundRepetitions) | None => {
+            let Some(report) = analyze(PRODUCT_DETECTOR)? else {
+                return Ok(ClipOutcome::Unreadable(entry.id));
+            };
+            DetectorOutputs::of(&report)
+        }
+    };
     let digest = format!(
         "{}\t{}",
         entry.id,
@@ -1541,7 +1596,7 @@ fn score_clip(
         duration_seconds,
         reference_kinds: entry.reference_kinds,
         predicted_kinds: outputs.baseline_predicted,
-        abstained_kinds: Vec::new(),
+        abstained_kinds: outputs.baseline_abstained,
         predicted_probabilities: None,
     };
     let candidate = BenchmarkClip {
@@ -2863,5 +2918,37 @@ mod tests {
             held_out.candidate.as_ref().unwrap().paired.clip_count,
             held_out.held_out.as_ref().unwrap().clip_count
         );
+    }
+
+    #[test]
+    fn prolongation_candidate_shares_the_product_abstentions_and_uses_the_macro_f1_rule() {
+        assert_eq!(
+            Candidate::parse("spectral-stationarity-prolongations"),
+            Some(Candidate::SpectralStationarityProlongations)
+        );
+        assert_eq!(
+            Candidate::parse("withhold-audio-only-sound-repetitions"),
+            Some(Candidate::WithholdAudioOnlySoundRepetitions)
+        );
+        assert_eq!(Candidate::parse("unknown"), None);
+
+        // Both detectors withhold audio-only sound repetitions; abstentions they share are no
+        // coverage cost, so the candidate is judged by the macro-F1 rule.
+        let clip = |id: &str, abstained: Vec<StutterKind>| BenchmarkClip {
+            id: id.to_string(),
+            speaker_id: Some(id.to_string()),
+            duration_seconds: 3.0,
+            reference_kinds: vec![StutterKind::SoundRepetition],
+            predicted_kinds: Vec::new(),
+            abstained_kinds: abstained,
+            predicted_probabilities: None,
+        };
+        let both = vec![
+            clip("a", vec![StutterKind::SoundRepetition]),
+            clip("b", vec![StutterKind::SoundRepetition]),
+        ];
+        let comparison = paired_comparison((&inputs(), &both), (&inputs(), &both)).unwrap();
+        assert!(comparison.coverage_cost.is_empty());
+        assert_eq!(comparison.promotion.rule, "macroF1");
     }
 }

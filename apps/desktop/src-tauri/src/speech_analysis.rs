@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use audio_analysis_core::{capture_metrics, rms, CaptureMetrics, CaptureMetricsConfig, FrameSpec};
 use audio_analysis_fourier::FourierTransform;
@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::speech_pipeline::{
-    onset_id, pause_id, speech_id, token_id, AnalysisCapabilities, INTERPOLATED_TIMING_NOTE,
+    onset_id, pause_id, speech_id, token_id, AnalysisCapabilities, AUDIO_OBSERVATION_ID,
+    INTERPOLATED_TIMING_NOTE,
 };
 
 #[derive(Debug, Error)]
@@ -29,7 +30,7 @@ pub enum SpeechAnalysisError {
 type Result<T> = std::result::Result<T, SpeechAnalysisError>;
 
 /// Bump whenever the detector's output can change for the same input; saved sessions record it.
-pub const SPEECH_ANALYSIS_VERSION: &str = "2";
+pub const SPEECH_ANALYSIS_VERSION: &str = "3";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,9 +119,30 @@ pub(crate) enum EvidencePolicy {
     WithholdAudioOnlySoundRepetitions,
 }
 
-/// The policy the product uses; the benchmark compares it with `ReportAll`.
-pub(crate) const PRODUCT_EVIDENCE_POLICY: EvidencePolicy =
-    EvidencePolicy::WithholdAudioOnlySoundRepetitions;
+/// How prolongations are found in the audio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProlongationRule {
+    /// A speech-activity interval of at least 0.45 s with at most one onset or a stable pitch
+    /// (the detector before the second #27 slice). Kept as the benchmark baseline.
+    #[cfg_attr(not(test), allow(dead_code))]
+    SpeechInterval,
+    /// A stretch of at least `STATIONARY_MIN_SECONDS` whose short-time spectrum barely changes
+    /// from frame to frame (`docs/benchmarks/sep28k-prolongation.md`).
+    SpectralStationarity,
+}
+
+/// The analyzer configuration: which acoustic rules run and which candidates become events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Detector {
+    pub evidence: EvidencePolicy,
+    pub prolongation: ProlongationRule,
+}
+
+/// The configuration the product uses; the benchmark compares candidates with it.
+pub(crate) const PRODUCT_DETECTOR: Detector = Detector {
+    evidence: EvidencePolicy::WithholdAudioOnlySoundRepetitions,
+    prolongation: ProlongationRule::SpectralStationarity,
+};
 
 /// A "possible – not enough evidence" detection (`AnalysisReport::insufficient_evidence`).
 #[derive(Debug, Clone, Serialize)]
@@ -374,6 +396,8 @@ pub(crate) struct TimedToken {
 struct AcousticFrame {
     start_seconds: f64,
     end_seconds: f64,
+    /// log10 power in `SPECTRAL_BANDS` log-spaced bands from 100 Hz to 8 kHz.
+    band_log_power: [f64; SPECTRAL_BANDS],
     rms: f64,
     zero_crossing_rate: f64,
     pitch_hz: Option<f64>,
@@ -416,7 +440,7 @@ pub(crate) struct AcousticObservations {
 /// `speech_pipeline::analyze_speech_session`, which adds the cited observations.
 #[cfg(test)]
 pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<AnalysisReport> {
-    analyze_with_evidence(request, PRODUCT_EVIDENCE_POLICY).map(|(report, _)| report)
+    analyze_with_evidence(request, PRODUCT_DETECTOR).map(|(report, _)| report)
 }
 
 /// The stuttering-specific detector. Every stage gives its events `evidence` citing the
@@ -424,7 +448,7 @@ pub fn analyze_speech_session_impl(request: AnalyzeSpeechRequest) -> Result<Anal
 /// candidates it combines. Also returns the acoustic observations, when audio was analyzed.
 pub(crate) fn analyze_with_evidence(
     request: AnalyzeSpeechRequest,
-    policy: EvidencePolicy,
+    detector: Detector,
 ) -> Result<(AnalysisReport, Option<AcousticObservations>)> {
     let mut events = Vec::new();
     let mut tokens = Vec::new();
@@ -466,7 +490,7 @@ pub(crate) fn analyze_with_evidence(
     }
 
     events.extend(detect_blocks(&request.pauses));
-    let mut acoustic = analyze_acoustics(&request)?;
+    let mut acoustic = analyze_acoustics(&request, detector.prolongation)?;
     let capture = measure_capture(&request)?;
     if let Some(acoustic) = &acoustic {
         duration = duration.max(acoustic.stats.analyzed_duration_seconds);
@@ -486,7 +510,7 @@ pub(crate) fn analyze_with_evidence(
     // Withholding is a pure partition of the fused events, so `ReportAll` events are exactly
     // the events plus the withheld candidates of the same input.
     let mut insufficient_evidence = Vec::new();
-    if policy == EvidencePolicy::WithholdAudioOnlySoundRepetitions {
+    if detector.evidence == EvidencePolicy::WithholdAudioOnlySoundRepetitions {
         let (withheld, kept): (Vec<_>, Vec<_>) = events.into_iter().partition(|event| {
             event.kind == StutterKind::SoundRepetition
                 && event.source == Some(EventSource::Acoustic)
@@ -701,7 +725,10 @@ pub fn identify_speaker_impl(
     })
 }
 
-fn analyze_acoustics(request: &AnalyzeSpeechRequest) -> Result<Option<AcousticAnalysis>> {
+fn analyze_acoustics(
+    request: &AnalyzeSpeechRequest,
+    prolongation_rule: ProlongationRule,
+) -> Result<Option<AcousticAnalysis>> {
     let (samples, sample_rate) = match (&request.samples, request.sample_rate) {
         (None, None) => return Ok(None),
         (Some(samples), Some(sample_rate)) => (samples.as_slice(), sample_rate),
@@ -778,12 +805,18 @@ fn analyze_acoustics(request: &AnalyzeSpeechRequest) -> Result<Option<AcousticAn
         request,
         silence_threshold,
     ));
-    events.extend(detect_acoustic_prolongations(
-        &frames,
-        &speech_spans,
-        &onsets,
-        request,
-    ));
+    events.extend(match prolongation_rule {
+        ProlongationRule::SpeechInterval => {
+            detect_acoustic_prolongations(&frames, &speech_spans, &onsets, request)
+        }
+        ProlongationRule::SpectralStationarity => detect_stationary_prolongations(
+            &frames,
+            &speech_spans,
+            &onsets,
+            request,
+            speech_threshold * STATIONARY_ENERGY_FRACTION,
+        ),
+    });
     events.extend(detect_acoustic_repetitions(&frames, &onsets, request));
 
     let analyzed_duration_seconds = normalized.len() as f64 / target_sample_rate as f64;
@@ -866,8 +899,10 @@ fn acoustic_frames(
             .estimate_samples(frame, sample_rate)?
             .frequency_hz
             .map(|value| value as f64);
-        let spectral = fourier.analyze_samples(frame, sample_rate)?.features();
+        let spectrum = fourier.analyze_samples(frame, sample_rate)?;
+        let spectral = spectrum.features();
         frames.push(AcousticFrame {
+            band_log_power: band_log_power(&spectrum),
             start_seconds: start_sample as f64 / sample_rate as f64,
             end_seconds: (start_sample + frame.len()).min(samples.len()) as f64
                 / sample_rate as f64,
@@ -959,6 +994,195 @@ fn detect_acoustic_blocks(
                     "{duration:.2} s without speech activity or energy above the silence threshold between two speech-activity intervals{}{}.",
                     if followed_by_onset { "; speech resumes with an onset" } else { "" },
                     if has_pause { "; a captured pause overlaps the gap" } else { "" },
+                ),
+            )),
+        });
+    }
+    events
+}
+
+const SPECTRAL_BANDS: usize = 16;
+/// A prolongation needs at least this long a spectrally stationary stretch. Ordinary speech
+/// changes sound every 0.1–0.3 s. Chosen on the SEP-28k training partition (F1 plateau
+/// 0.42–0.46 s; `docs/benchmarks/sep28k-prolongation.md`).
+const STATIONARY_MIN_SECONDS: f64 = 0.45;
+/// Largest frame-to-frame change of the band log-power vector (Euclidean, log10 units: 2.0 is
+/// 20 dB spread over 16 bands) that still counts as the same sound.
+const STATIONARY_MAX_CHANGE: f64 = 2.0;
+/// A stationary frame must carry at least this fraction of the speech-activity threshold, so a
+/// steady silence or noise floor is not a sustained sound.
+const STATIONARY_ENERGY_FRACTION: f64 = 0.5;
+
+fn band_log_power(spectrum: &audio_analysis_core::spectral::Spectrum) -> [f64; SPECTRAL_BANDS] {
+    let mut power = [0.0_f64; SPECTRAL_BANDS];
+    let octaves = (8_000.0_f64 / 100.0).ln();
+    for bin in &spectrum.bins {
+        let frequency = bin.frequency_hz as f64;
+        if !(100.0..8_000.0).contains(&frequency) {
+            continue;
+        }
+        let band = ((frequency / 100.0).ln() / octaves * SPECTRAL_BANDS as f64) as usize;
+        power[band.min(SPECTRAL_BANDS - 1)] += bin.power as f64;
+    }
+    let log_power = power.map(|value| (value + 1e-10).log10());
+    // Bands more than 60 dB below the strongest are floored: their level is numerical leakage
+    // (nearly empty bands of a pure tone), not a change of sound.
+    let floor = log_power.iter().copied().fold(f64::MIN, f64::max) - BAND_DYNAMIC_RANGE;
+    log_power.map(|value| value.max(floor))
+}
+
+/// Dynamic range kept in `band_log_power`, in log10 units (60 dB).
+const BAND_DYNAMIC_RANGE: f64 = 6.0;
+
+fn spectral_change(left: &AcousticFrame, right: &AcousticFrame) -> f64 {
+    left.band_log_power
+        .iter()
+        .zip(&right.band_log_power)
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// Prolongations as sustained sounds: runs of consecutive frames with energy above
+/// `energy_threshold` whose spectrum changes by less than `STATIONARY_MAX_CHANGE` from the
+/// previous frame, lasting at least `STATIONARY_MIN_SECONDS`. Audio alone cannot tell a
+/// prolonged sound from a sung or deliberately sustained one; the event says so.
+fn detect_stationary_prolongations(
+    frames: &[AcousticFrame],
+    speech_spans: &[audio_analysis_speakers::SpeechSpan],
+    onsets: &[Onset],
+    request: &AnalyzeSpeechRequest,
+    energy_threshold: f64,
+) -> Vec<StutterEvent> {
+    let mut runs = Vec::new();
+    let mut start = None;
+    for index in 0..=frames.len() {
+        let stationary = index < frames.len()
+            && index > 0
+            && frames[index].rms > energy_threshold
+            && spectral_change(&frames[index - 1], &frames[index]) < STATIONARY_MAX_CHANGE;
+        match (stationary, start) {
+            (true, None) => start = Some(index),
+            (false, Some(first)) => {
+                runs.push(first..index);
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    let hop = frames
+        .get(1)
+        .map_or(0.01, |frame| frame.start_seconds - frames[0].start_seconds);
+    let mut used_ids = HashSet::new();
+    let mut events = Vec::new();
+    for run in runs {
+        // Each stationary frame continues the sound of the frame before it.
+        let duration = run.len() as f64 * hop;
+        if duration + 1e-9 < STATIONARY_MIN_SECONDS {
+            continue;
+        }
+        let run_frames = &frames[run.start - 1..run.end];
+        let start_seconds = run_frames[0].start_seconds;
+        let end_seconds = run_frames[run_frames.len() - 1].end_seconds;
+        let mut supporting = speech_spans
+            .iter()
+            .enumerate()
+            .filter(|(_, span)| {
+                overlaps(
+                    start_seconds,
+                    end_seconds,
+                    span.start_seconds,
+                    span.end_seconds,
+                )
+            })
+            .map(|(index, _)| speech_id(index))
+            .collect::<Vec<_>>();
+        if supporting.is_empty() {
+            supporting.push(AUDIO_OBSERVATION_ID.to_string());
+        }
+        let (onset_ids, run_onsets): (Vec<String>, Vec<&Onset>) = onsets
+            .iter()
+            .enumerate()
+            .filter(|(_, onset)| {
+                onset.timestamp_seconds >= start_seconds && onset.timestamp_seconds <= end_seconds
+            })
+            .map(|(index, onset)| (onset_id(index), onset))
+            .unzip();
+        let mut id = format!("prolongation:{}", supporting[0]);
+        let mut suffix = 1;
+        while !used_ids.insert(id.clone()) {
+            id = format!("prolongation:{}:{suffix}", supporting[0]);
+            suffix += 1;
+        }
+        supporting.extend(onset_ids);
+        let pitch_values = run_frames
+            .iter()
+            .filter_map(|frame| frame.pitch_hz)
+            .collect::<Vec<_>>();
+        let pitch_stability = stability_score(&pitch_values);
+        let changes = run_frames
+            .windows(2)
+            .map(|pair| spectral_change(&pair[0], &pair[1]))
+            .collect::<Vec<_>>();
+        let transcript_support = request
+            .segments
+            .iter()
+            .filter(|segment| {
+                segment.is_final
+                    && overlaps(
+                        start_seconds,
+                        end_seconds,
+                        segment.start_seconds,
+                        segment.end_seconds,
+                    )
+            })
+            .any(|segment| transcript_has_prolongation(&segment.text));
+        let confidence = (0.6_f64
+            + if duration >= 0.7 { 0.15 } else { 0.0 }
+            + if transcript_support { 0.1 } else { 0.0 })
+        .min(0.95_f64) as f32;
+        events.push(StutterEvent {
+            kind: StutterKind::Prolongation,
+            start_seconds,
+            end_seconds,
+            text: nearest_text_at(&request.segments, start_seconds, end_seconds)
+                .unwrap_or_else(|| "sustained sound".to_string()),
+            detail: format!("{duration:.1}s sustained sound"),
+            confidence,
+            source: Some(EventSource::Acoustic),
+            acoustic_evidence: Some(AcousticEvidence {
+                energy_rms: Some(mean_refs(&run_frames.iter().collect::<Vec<_>>(), |frame| {
+                    frame.rms
+                })),
+                onset_count: Some(run_onsets.len()),
+                onset_rate: Some(run_onsets.len() as f64 / duration.max(0.001)),
+                pitch_mean_hz: (!pitch_values.is_empty()).then(|| mean(&pitch_values)),
+                pitch_stability,
+                spectral_centroid_hz: Some(mean(
+                    &run_frames
+                        .iter()
+                        .map(|frame| frame.spectral_centroid_hz)
+                        .collect::<Vec<_>>(),
+                )),
+                zero_crossing_rate: Some(mean(
+                    &run_frames
+                        .iter()
+                        .map(|frame| frame.zero_crossing_rate)
+                        .collect::<Vec<_>>(),
+                )),
+                ..AcousticEvidence::default()
+            }),
+            evidence: Some(EventEvidence::new(
+                id,
+                supporting,
+                format!(
+                    "{duration:.2} s in which the spectrum changes by at most {:.2} (log10 band power) per 10 ms frame, longer than the {STATIONARY_MIN_SECONDS:.2} s threshold for one sustained sound{}. Audio alone cannot tell a prolonged sound from a sung or deliberately held one.",
+                    changes.iter().copied().fold(0.0, f64::max),
+                    if transcript_support {
+                        "; an overlapping final transcript segment contains a stretched word"
+                    } else {
+                        ""
+                    },
                 ),
             )),
         });
@@ -2088,6 +2312,82 @@ mod tests {
         }));
     }
 
+    fn audio_only(samples: Vec<f32>) -> AnalyzeSpeechRequest {
+        AnalyzeSpeechRequest {
+            segments: Vec::new(),
+            pauses: Vec::new(),
+            session_started_at: None,
+            samples: Some(samples),
+            sample_rate: Some(16_000),
+        }
+    }
+
+    fn acoustic_prolongations(request: AnalyzeSpeechRequest) -> Vec<StutterEvent> {
+        analyze_speech_session_impl(request)
+            .unwrap()
+            .events
+            .into_iter()
+            .filter(|event| event.kind == StutterKind::Prolongation)
+            .collect()
+    }
+
+    #[test]
+    fn sustained_sound_is_one_prolongation_timed_to_the_sound() {
+        let mut samples = vec![0.0; 8_000];
+        samples.extend(sine_wave(180.0, 16_000, 0.8));
+        samples.extend(vec![0.0; 8_000]);
+        let events = acoustic_prolongations(audio_only(samples));
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.source, Some(EventSource::Acoustic));
+        assert!((event.start_seconds - 0.5).abs() < 0.05, "{event:?}");
+        assert!((event.end_seconds - 1.3).abs() < 0.05, "{event:?}");
+        let evidence = event.evidence.as_ref().unwrap();
+        assert!(evidence.supporting[0].starts_with("acoustic:speech:"));
+        assert!(evidence.explanation.contains("cannot tell"));
+    }
+
+    #[test]
+    fn changing_sounds_are_not_a_prolongation() {
+        // Continuous voicing whose spectrum changes every 120 ms, like ordinary speech.
+        let mut samples = Vec::new();
+        for frequency in [
+            180.0, 700.0, 300.0, 1_400.0, 220.0, 900.0, 450.0, 2_000.0, 260.0, 1_100.0,
+        ] {
+            samples.extend(sine_wave(frequency, 16_000, 0.12));
+        }
+        assert!(acoustic_prolongations(audio_only(samples)).is_empty());
+    }
+
+    #[test]
+    fn short_sustained_sound_and_silence_are_not_prolongations() {
+        let mut samples = vec![0.0; 8_000];
+        samples.extend(sine_wave(180.0, 16_000, 0.3));
+        samples.extend(vec![0.0; 8_000]);
+        assert!(acoustic_prolongations(audio_only(samples)).is_empty());
+        assert!(acoustic_prolongations(audio_only(vec![0.0; 32_000])).is_empty());
+    }
+
+    #[test]
+    fn speech_interval_rule_remains_the_benchmark_baseline() {
+        // The pre-#27 rule flags a long changing stretch that the product rule leaves alone.
+        let mut samples = Vec::new();
+        for frequency in [
+            180.0, 700.0, 300.0, 1_400.0, 220.0, 900.0, 450.0, 2_000.0, 260.0, 1_100.0,
+        ] {
+            samples.extend(sine_wave(frequency, 16_000, 0.12));
+        }
+        let legacy = Detector {
+            prolongation: ProlongationRule::SpeechInterval,
+            ..PRODUCT_DETECTOR
+        };
+        let (report, _) = analyze_with_evidence(audio_only(samples), legacy).unwrap();
+        assert!(report
+            .events
+            .iter()
+            .any(|event| event.kind == StutterKind::Prolongation));
+    }
+
     fn repeated_bursts_request() -> AnalyzeSpeechRequest {
         let sample_rate = 16_000;
         let mut samples = Vec::new();
@@ -2112,21 +2412,24 @@ mod tests {
         }
     }
 
+    const REPORT_ALL: Detector = Detector {
+        evidence: EvidencePolicy::ReportAll,
+        ..PRODUCT_DETECTOR
+    };
+
     fn audio_only_sound_repetition(event: &StutterEvent) -> bool {
         event.kind == StutterKind::SoundRepetition && event.source == Some(EventSource::Acoustic)
     }
 
     #[test]
     fn detects_repeated_acoustic_bursts() {
-        let (report, _) =
-            analyze_with_evidence(repeated_bursts_request(), EvidencePolicy::ReportAll).unwrap();
+        let (report, _) = analyze_with_evidence(repeated_bursts_request(), REPORT_ALL).unwrap();
         assert!(report.events.iter().any(audio_only_sound_repetition));
     }
 
     #[test]
     fn audio_only_sound_repetitions_are_withheld_and_left_out_of_counts() {
-        let (all, _) =
-            analyze_with_evidence(repeated_bursts_request(), EvidencePolicy::ReportAll).unwrap();
+        let (all, _) = analyze_with_evidence(repeated_bursts_request(), REPORT_ALL).unwrap();
         let report = analyze_speech_session_impl(repeated_bursts_request()).unwrap();
 
         assert!(!report.events.iter().any(audio_only_sound_repetition));
