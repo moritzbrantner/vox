@@ -85,7 +85,12 @@ Fixed before any candidate is compared with the existing detector:
 
 An abstention ("insufficient evidence") is neither a detection nor a negative: on a reference positive it is a false negative, on a reference negative it is neither a true negative nor a false positive, and it never flags a fluent clip. Each kind reports `abstained` and `coverage` (share of clips with a decision).
 
-The one candidate so far, `withhold-audio-only-sound-repetitions`, is the product's `EvidencePolicy::WithholdAudioOnlySoundRepetitions`. Withholding only partitions the fused events, so one analysis gives both detectors: the existing detector (`ReportAll`) predicts every reported or withheld kind, the candidate predicts the reported kinds and abstains on the withheld ones.
+An abstention is a coverage cost only when the candidate abstains on a kind more often than the baseline; abstentions both detectors share (the product withholds audio-only sound repetitions in both) leave the candidate under the macro-F1 rule.
+
+Candidates (both promoted; reports in `docs/benchmarks/`):
+
+- `withhold-audio-only-sound-repetitions` is the product's `EvidencePolicy::WithholdAudioOnlySoundRepetitions`. Withholding only partitions the fused events, so one analysis gives both detectors: the detector before withholding (`ReportAll`) predicts every reported or withheld kind, the candidate predicts the reported kinds and abstains on the withheld ones.
+- `spectral-stationarity-prolongations` compares the product detector with `ProlongationRule::SpectralStationarity` against the same detector with the earlier `ProlongationRule::SpeechInterval`. Each clip is analyzed twice; each side predicts its reported kinds and abstains on its withheld ones.
 
 ## Dataset card: SEP-28k
 
@@ -148,7 +153,8 @@ Reduced and unsupported outputs are evaluated on their own terms instead: every 
 
 Each native event carries `evidence`:
 
-- `id`: `<kind>:<first observation id>`, e.g. `wordRepetition:transcript:1:0`, `block:pause:2`, `prolongation:acoustic:speech:0`, `hyphenatedSoundRepetition:transcript:0:0`. Stable for the same input.
+- `id`: `<kind>:<first observation id>`, e.g. `wordRepetition:transcript:1:0`, `block:pause:2`, `prolongation:acoustic:speech:0`, `hyphenatedSoundRepetition:transcript:0:0`. A second acoustic prolongation in the same speech-activity interval gets a `:1`, `:2`… suffix; one outside every interval cites `audio:0`. Stable for the same input.
+- Acoustic prolongations are spectrally stationary stretches: at least 0.45 s in which the 16-band log spectrum (100 Hz–8 kHz, 60 dB range) changes by less than 2.0 log10 units per 10 ms frame and the energy stays above half the speech-activity threshold. The event spans the stretch, not the whole speech-activity interval. Audio alone cannot tell a prolonged sound from a sung, sustained or emphasised one, and the explanation says so. The shared fallback keeps its own reduced speech-interval heuristic (`acousticEvents` is `reduced` there).
 - `supporting`: the observations the decision rests on. A fused event lists its transcript observations, then those of the acoustic candidate it was fused with.
 - `conflicting` (when present): observations that speak against the event without overturning it. Currently: speech activity of at least 0.1 s inside a reported block.
 - `explanation`: the decision in words.

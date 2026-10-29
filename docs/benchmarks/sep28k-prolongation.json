@@ -1,0 +1,1069 @@
+{
+  "note": "Aggregates only (no clip ids, audio or clip-level outputs). Produced by stutter-eval; see sep28k-prolongation.md.",
+  "developmentComparison": {
+    "candidate": "spectralStationarityProlongations",
+    "partition": "train",
+    "paired": {
+      "clipCount": 9462,
+      "resamplingUnit": "speaker",
+      "resamples": 1000,
+      "seed": "sep28k-paired-bootstrap-v1",
+      "baseline": {
+        "clipCount": 9462,
+        "speakerCount": 224,
+        "microPrecision": 0.12065383017038371,
+        "microRecall": 0.1419722901385493,
+        "microF1": 0.1304478059008537,
+        "macroF1": 0.07457786041471608,
+        "falsePositiveClipRate": 0.5718792248760703,
+        "brierScore": null,
+        "byKind": {
+          "wordRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 1129,
+            "trueNegative": 8333,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "soundRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 812,
+            "trueNegative": 4042,
+            "abstained": 5044,
+            "coverage": 0.46692031283026847,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "prolongation": {
+            "truePositive": 545,
+            "falsePositive": 4033,
+            "falseNegative": 326,
+            "trueNegative": 4558,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.11904761904761904,
+            "recall": 0.6257175660160735,
+            "f1": 0.20003670398238207
+          },
+          "block": {
+            "truePositive": 326,
+            "falsePositive": 2315,
+            "falseNegative": 805,
+            "trueNegative": 6016,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.1234380916319576,
+            "recall": 0.28824049513704686,
+            "f1": 0.1728525980911983
+          },
+          "filler": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 2192,
+            "trueNegative": 7270,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        }
+      },
+      "candidate": {
+        "clipCount": 9462,
+        "speakerCount": 224,
+        "microPrecision": 0.17479879275653923,
+        "microRecall": 0.1132844335778321,
+        "microF1": 0.13747403817624368,
+        "macroF1": 0.10147895116855699,
+        "falsePositiveClipRate": 0.3303289770166742,
+        "brierScore": null,
+        "byKind": {
+          "wordRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 1129,
+            "trueNegative": 8333,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "soundRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 812,
+            "trueNegative": 4042,
+            "abstained": 5044,
+            "coverage": 0.46692031283026847,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "prolongation": {
+            "truePositive": 369,
+            "falsePositive": 966,
+            "falseNegative": 502,
+            "trueNegative": 7625,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.27640449438202247,
+            "recall": 0.42365097588978184,
+            "f1": 0.3345421577515866
+          },
+          "block": {
+            "truePositive": 326,
+            "falsePositive": 2315,
+            "falseNegative": 805,
+            "trueNegative": 6016,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.1234380916319576,
+            "recall": 0.28824049513704686,
+            "f1": 0.1728525980911983
+          },
+          "filler": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 2192,
+            "trueNegative": 7270,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        }
+      },
+      "macroF1": {
+        "estimate": 0.02690109075384091,
+        "interval": {
+          "lower": 0.019102747291723662,
+          "upper": 0.03192125707666149
+        }
+      },
+      "microF1": {
+        "estimate": 0.007026232275389982,
+        "interval": {
+          "lower": -0.0015500025810123996,
+          "upper": 0.013756173388565579
+        }
+      },
+      "falsePositiveClipRate": {
+        "estimate": -0.24155024785939616,
+        "interval": {
+          "lower": -0.3186084344887999,
+          "upper": -0.15927977839335183
+        }
+      },
+      "f1ByKind": {
+        "block": {
+          "estimate": 0.0,
+          "interval": {
+            "lower": 0.0,
+            "upper": 0.0
+          }
+        },
+        "filler": {
+          "estimate": 0.0,
+          "interval": {
+            "lower": 0.0,
+            "upper": 0.0
+          }
+        },
+        "prolongation": {
+          "estimate": 0.1345054537692045,
+          "interval": {
+            "lower": 0.09551373645861827,
+            "upper": 0.15960628538330748
+          }
+        },
+        "soundRepetition": {
+          "estimate": 0.0,
+          "interval": {
+            "lower": 0.0,
+            "upper": 0.0
+          }
+        },
+        "wordRepetition": {
+          "estimate": 0.0,
+          "interval": {
+            "lower": 0.0,
+            "upper": 0.0
+          }
+        }
+      },
+      "precisionByKind": {
+        "block": {
+          "estimate": 0.0,
+          "interval": {
+            "lower": 0.0,
+            "upper": 0.0
+          }
+        },
+        "filler": {
+          "estimate": 0.0,
+          "interval": null
+        },
+        "prolongation": {
+          "estimate": 0.15735687533440343,
+          "interval": {
+            "lower": 0.12439200999644082,
+            "upper": 0.17913517981696228
+          }
+        },
+        "soundRepetition": {
+          "estimate": 0.0,
+          "interval": null
+        },
+        "wordRepetition": {
+          "estimate": 0.0,
+          "interval": null
+        }
+      },
+      "coverageCost": {},
+      "promotion": {
+        "rule": "macroF1",
+        "criteria": [
+          {
+            "name": "macroF1Improves",
+            "met": true,
+            "detail": "+0.0269 (95% interval +0.0191 to +0.0319)"
+          },
+          {
+            "name": "fluentFalsePositiveRateDoesNotRegress",
+            "met": true,
+            "detail": "-0.2416 (95% interval -0.3186 to -0.1593)"
+          },
+          {
+            "name": "noKindRegresses",
+            "met": true,
+            "detail": "block: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (95% interval +0.0000 to +0.0000)"
+          },
+          {
+            "name": "noKindRegresses",
+            "met": true,
+            "detail": "filler: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+          },
+          {
+            "name": "noKindRegresses",
+            "met": true,
+            "detail": "prolongation: F1 +0.1345 (95% interval +0.0955 to +0.1596); precision +0.1574 (95% interval +0.1244 to +0.1791)"
+          },
+          {
+            "name": "noKindRegresses",
+            "met": true,
+            "detail": "soundRepetition: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+          },
+          {
+            "name": "noKindRegresses",
+            "met": true,
+            "detail": "wordRepetition: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+          },
+          {
+            "name": "comparableInputs",
+            "met": true,
+            "detail": "identical label, mapping and scored-audio hashes and vote threshold"
+          }
+        ],
+        "promoted": true
+      }
+    },
+    "challengeCandidate": {
+      "clipCount": 1030,
+      "speakerCount": 95,
+      "microPrecision": 0.23129251700680273,
+      "microRecall": 0.11467116357504216,
+      "microF1": 0.15332581736189402,
+      "macroF1": 0.09800619434765778,
+      "falsePositiveClipRate": 0.2167577413479053,
+      "brierScore": null,
+      "byKind": {
+        "wordRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 53,
+          "trueNegative": 977,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "soundRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 140,
+          "trueNegative": 320,
+          "abstained": 649,
+          "coverage": 0.3699029126213592,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "prolongation": {
+          "truePositive": 41,
+          "falsePositive": 110,
+          "falseNegative": 60,
+          "trueNegative": 819,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.271523178807947,
+          "recall": 0.40594059405940597,
+          "f1": 0.32539682539682546
+        },
+        "block": {
+          "truePositive": 27,
+          "falsePositive": 116,
+          "falseNegative": 158,
+          "trueNegative": 729,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.1888111888111888,
+          "recall": 0.14594594594594595,
+          "f1": 0.16463414634146342
+        },
+        "filler": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 114,
+          "trueNegative": 916,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    }
+  },
+  "heldOutRun": {
+    "schemaVersion": 1,
+    "corpus": {
+      "name": "SEP-28k",
+      "labelsSha256": "a9eb53e2e8ee0506470f7a13931185f110f45b52d39c1781b1c213378d0e81be",
+      "labelRows": 28017,
+      "speakerMappingSha256": "ccae0b79ecc26bd723db71ced52519f29e8cc180f97853f90ea0743c9cf30b34",
+      "scoredAudioSha256": "9f5ea5d11fede74e1079b07f9023a96beedf35365e3363bf2ef86dd268fbdb44",
+      "challengeAudioSha256": "7f1f48b8c2396da1fd42ed23087baff2d21908a9f756563e50e41c69790b09ab"
+    },
+    "configuration": {
+      "detector": "existing-detector",
+      "detectorRevision": {
+        "commit": "f2b2a861a36e61e9833cd5761c8a6088ee66a99e",
+        "dirty": false,
+        "sourcePinsSha256": "9077e86ec2ed7bec4046eff13335b41bf3b7af335b590c42f5f515da30cf0fc9",
+        "sourceMode": true,
+        "lockfileSha256": "185f5e052a0b09d3d302efa69f4042bb28841155a69c03e795dee16ba3bb5d67",
+        "capabilitySources": [
+          {
+            "name": "audio-analysis",
+            "commit": "1733abb72cdeef96b01000cd2064c068c9128c25",
+            "dirty": false
+          },
+          {
+            "name": "moenarch-foundation",
+            "commit": "9a162dfd44d3cae7f88ad993de79defc0ac94cd6",
+            "dirty": false
+          },
+          {
+            "name": "nlp-stack",
+            "commit": "7da2af67cc8cacdfd2458f99cf5b6c2d42605876",
+            "dirty": false
+          }
+        ]
+      },
+      "detectorInput": "clip audio only; no transcript",
+      "voteThreshold": 2,
+      "limit": null
+    },
+    "counts": {
+      "rows": 28017,
+      "processedRows": 28017,
+      "excludedRows": 3468,
+      "excluded": {
+        "difficultToUnderstand": 1035,
+        "music": 294,
+        "noAffirmativeLabel": 1731,
+        "noSpeech": 306,
+        "poorAudioQuality": 580,
+        "unsure": 23
+      },
+      "missingAudio": 6155,
+      "unreadableAudio": 2,
+      "scored": 18392,
+      "fluentScored": 7981,
+      "challengeRows": 1448,
+      "challengeUnavailable": 418,
+      "challengeScored": 1030
+    },
+    "prevalence": {
+      "block": {
+        "reference": 2332,
+        "predicted": 4518
+      },
+      "filler": {
+        "reference": 4614,
+        "predicted": 0
+      },
+      "prolongation": {
+        "reference": 1937,
+        "predicted": 8946
+      },
+      "soundRepetition": {
+        "reference": 1689,
+        "predicted": 0
+      },
+      "wordRepetition": {
+        "reference": 2278,
+        "predicted": 0
+      }
+    },
+    "partition": {
+      "kind": "speakerExclusive",
+      "seed": "sep28k-partition-v1",
+      "evaluationFraction": 0.2,
+      "trainClips": 9462,
+      "evaluationClips": 8930,
+      "trainSpeakers": 224,
+      "evaluationSpeakers": 57
+    },
+    "allScored": {
+      "clipCount": 18392,
+      "speakerCount": 281,
+      "microPrecision": 0.13666072489601902,
+      "microRecall": 0.1431906614785992,
+      "microF1": 0.1398495097666641,
+      "macroF1": 0.08033085016408768,
+      "falsePositiveClipRate": 0.5550682871820574,
+      "brierScore": null,
+      "byKind": {
+        "wordRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 2278,
+          "trueNegative": 16114,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "soundRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 1689,
+          "trueNegative": 7385,
+          "abstained": 10232,
+          "coverage": 0.4436711613745107,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "prolongation": {
+          "truePositive": 1253,
+          "falsePositive": 7693,
+          "falseNegative": 684,
+          "trueNegative": 8762,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.14006259780907668,
+          "recall": 0.6468766133195664,
+          "f1": 0.23026738950656986
+        },
+        "block": {
+          "truePositive": 587,
+          "falsePositive": 3931,
+          "falseNegative": 1745,
+          "trueNegative": 12129,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.12992474546259405,
+          "recall": 0.25171526586620924,
+          "f1": 0.17138686131386857
+        },
+        "filler": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 4614,
+          "trueNegative": 13778,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    },
+    "heldOut": {
+      "clipCount": 8930,
+      "speakerCount": 57,
+      "microPrecision": 0.15516413130504403,
+      "microRecall": 0.14430379746835442,
+      "microF1": 0.14953703703703705,
+      "macroF1": 0.08603443340285447,
+      "falsePositiveClipRate": 0.5340107253739769,
+      "brierScore": null,
+      "byKind": {
+        "wordRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 1149,
+          "trueNegative": 7781,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "soundRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 877,
+          "trueNegative": 3343,
+          "abstained": 5188,
+          "coverage": 0.41903695408734604,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "prolongation": {
+          "truePositive": 708,
+          "falsePositive": 3660,
+          "falseNegative": 358,
+          "trueNegative": 4204,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.1620879120879121,
+          "recall": 0.6641651031894934,
+          "f1": 0.2605815237394185
+        },
+        "block": {
+          "truePositive": 261,
+          "falsePositive": 1616,
+          "falseNegative": 940,
+          "trueNegative": 6113,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.13905167820990944,
+          "recall": 0.21731890091590342,
+          "f1": 0.16959064327485382
+        },
+        "filler": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 2422,
+          "trueNegative": 6508,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    },
+    "allScoredIntervals": {
+      "resamplingUnit": "speaker",
+      "resamples": 1000,
+      "seed": "sep28k-bootstrap-v1",
+      "microF1": {
+        "lower": 0.120837297811608,
+        "upper": 0.14788123908447467
+      },
+      "macroF1": {
+        "lower": 0.07090293070305595,
+        "upper": 0.08557668166863855
+      },
+      "falsePositiveClipRate": {
+        "lower": 0.4910783553141971,
+        "upper": 0.6298438403701562
+      },
+      "f1ByKind": {
+        "block": {
+          "lower": 0.15258166491043204,
+          "upper": 0.18840579710144928
+        },
+        "filler": {
+          "lower": 0.0,
+          "upper": 0.0
+        },
+        "prolongation": {
+          "lower": 0.19125528913963327,
+          "upper": 0.2507273748149661
+        },
+        "soundRepetition": {
+          "lower": 0.0,
+          "upper": 0.0
+        },
+        "wordRepetition": {
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      }
+    },
+    "heldOutIntervals": {
+      "resamplingUnit": "speaker",
+      "resamples": 1000,
+      "seed": "sep28k-bootstrap-v1",
+      "microF1": {
+        "lower": 0.11743341404358354,
+        "upper": 0.15465465465465467
+      },
+      "macroF1": {
+        "lower": 0.06675863532657716,
+        "upper": 0.08771227227639539
+      },
+      "falsePositiveClipRate": {
+        "lower": 0.45222929936305734,
+        "upper": 0.5679012345679012
+      },
+      "f1ByKind": {
+        "block": {
+          "lower": 0.11260053619302948,
+          "upper": 0.17493638676844783
+        },
+        "filler": {
+          "lower": 0.0,
+          "upper": 0.0
+        },
+        "prolongation": {
+          "lower": 0.196969696969697,
+          "upper": 0.2805662805662806
+        },
+        "soundRepetition": {
+          "lower": 0.0,
+          "upper": 0.0
+        },
+        "wordRepetition": {
+          "lower": 0.0,
+          "upper": 0.0
+        }
+      }
+    },
+    "challenge": {
+      "clipCount": 1030,
+      "speakerCount": 95,
+      "microPrecision": 0.14107142857142857,
+      "microRecall": 0.13322091062394603,
+      "microF1": 0.13703382480485687,
+      "macroF1": 0.07308126942273284,
+      "falsePositiveClipRate": 0.4681238615664845,
+      "brierScore": null,
+      "byKind": {
+        "wordRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 53,
+          "trueNegative": 977,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "soundRepetition": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 140,
+          "trueNegative": 320,
+          "abstained": 649,
+          "coverage": 0.3699029126213592,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "prolongation": {
+          "truePositive": 52,
+          "falsePositive": 365,
+          "falseNegative": 49,
+          "trueNegative": 564,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.12470023980815348,
+          "recall": 0.5148514851485149,
+          "f1": 0.2007722007722008
+        },
+        "block": {
+          "truePositive": 27,
+          "falsePositive": 116,
+          "falseNegative": 158,
+          "trueNegative": 729,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.1888111888111888,
+          "recall": 0.14594594594594595,
+          "f1": 0.16463414634146342
+        },
+        "filler": {
+          "truePositive": 0,
+          "falsePositive": 0,
+          "falseNegative": 114,
+          "trueNegative": 916,
+          "abstained": 0,
+          "coverage": 1.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      }
+    },
+    "candidate": {
+      "candidate": "spectralStationarityProlongations",
+      "partition": "heldOut",
+      "paired": {
+        "clipCount": 8930,
+        "resamplingUnit": "speaker",
+        "resamples": 1000,
+        "seed": "sep28k-paired-bootstrap-v1",
+        "baseline": {
+          "clipCount": 8930,
+          "speakerCount": 57,
+          "microPrecision": 0.15516413130504403,
+          "microRecall": 0.14430379746835442,
+          "microF1": 0.14953703703703705,
+          "macroF1": 0.08603443340285447,
+          "falsePositiveClipRate": 0.5340107253739769,
+          "brierScore": null,
+          "byKind": {
+            "wordRepetition": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 1149,
+              "trueNegative": 7781,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            },
+            "soundRepetition": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 877,
+              "trueNegative": 3343,
+              "abstained": 5188,
+              "coverage": 0.41903695408734604,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            },
+            "prolongation": {
+              "truePositive": 708,
+              "falsePositive": 3660,
+              "falseNegative": 358,
+              "trueNegative": 4204,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.1620879120879121,
+              "recall": 0.6641651031894934,
+              "f1": 0.2605815237394185
+            },
+            "block": {
+              "truePositive": 261,
+              "falsePositive": 1616,
+              "falseNegative": 940,
+              "trueNegative": 6113,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.13905167820990944,
+              "recall": 0.21731890091590342,
+              "f1": 0.16959064327485382
+            },
+            "filler": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 2422,
+              "trueNegative": 6508,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            }
+          }
+        },
+        "candidate": {
+          "clipCount": 8930,
+          "speakerCount": 57,
+          "microPrecision": 0.21575649059982094,
+          "microRecall": 0.10766939687267311,
+          "microF1": 0.14365189747665408,
+          "macroF1": 0.10667403416678178,
+          "falsePositiveClipRate": 0.27744848998024274,
+          "brierScore": null,
+          "byKind": {
+            "wordRepetition": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 1149,
+              "trueNegative": 7781,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            },
+            "soundRepetition": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 877,
+              "trueNegative": 3343,
+              "abstained": 5188,
+              "coverage": 0.41903695408734604,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            },
+            "prolongation": {
+              "truePositive": 462,
+              "falsePositive": 1012,
+              "falseNegative": 604,
+              "trueNegative": 6852,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.31343283582089554,
+              "recall": 0.4333958724202627,
+              "f1": 0.3637795275590551
+            },
+            "block": {
+              "truePositive": 261,
+              "falsePositive": 1616,
+              "falseNegative": 940,
+              "trueNegative": 6113,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.13905167820990944,
+              "recall": 0.21731890091590342,
+              "f1": 0.16959064327485382
+            },
+            "filler": {
+              "truePositive": 0,
+              "falsePositive": 0,
+              "falseNegative": 2422,
+              "trueNegative": 6508,
+              "abstained": 0,
+              "coverage": 1.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "f1": 0.0
+            }
+          }
+        },
+        "macroF1": {
+          "estimate": 0.020639600763927318,
+          "interval": {
+            "lower": 0.00581769346986738,
+            "upper": 0.02712643678160917
+          }
+        },
+        "microF1": {
+          "estimate": -0.005885139560382974,
+          "interval": {
+            "lower": -0.024855274753690038,
+            "upper": 0.0071079073441617235
+          }
+        },
+        "falsePositiveClipRate": {
+          "estimate": -0.25656223539373413,
+          "interval": {
+            "lower": -0.2701920146296861,
+            "upper": -0.10923076923076924
+          }
+        },
+        "f1ByKind": {
+          "block": {
+            "estimate": 0.0,
+            "interval": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "filler": {
+            "estimate": 0.0,
+            "interval": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "prolongation": {
+            "estimate": 0.10319800381963662,
+            "interval": {
+              "lower": 0.0290884673493369,
+              "upper": 0.13563218390804593
+            }
+          },
+          "soundRepetition": {
+            "estimate": 0.0,
+            "interval": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "wordRepetition": {
+            "estimate": 0.0,
+            "interval": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          }
+        },
+        "precisionByKind": {
+          "block": {
+            "estimate": 0.0,
+            "interval": {
+              "lower": 0.0,
+              "upper": 0.0
+            }
+          },
+          "filler": {
+            "estimate": 0.0,
+            "interval": null
+          },
+          "prolongation": {
+            "estimate": 0.15134492373298344,
+            "interval": {
+              "lower": 0.07292402826855124,
+              "upper": 0.16476822216635403
+            }
+          },
+          "soundRepetition": {
+            "estimate": 0.0,
+            "interval": null
+          },
+          "wordRepetition": {
+            "estimate": 0.0,
+            "interval": null
+          }
+        },
+        "coverageCost": {},
+        "promotion": {
+          "rule": "macroF1",
+          "criteria": [
+            {
+              "name": "macroF1Improves",
+              "met": true,
+              "detail": "+0.0206 (95% interval +0.0058 to +0.0271)"
+            },
+            {
+              "name": "fluentFalsePositiveRateDoesNotRegress",
+              "met": true,
+              "detail": "-0.2566 (95% interval -0.2702 to -0.1092)"
+            },
+            {
+              "name": "noKindRegresses",
+              "met": true,
+              "detail": "block: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (95% interval +0.0000 to +0.0000)"
+            },
+            {
+              "name": "noKindRegresses",
+              "met": true,
+              "detail": "filler: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+            },
+            {
+              "name": "noKindRegresses",
+              "met": true,
+              "detail": "prolongation: F1 +0.1032 (95% interval +0.0291 to +0.1356); precision +0.1513 (95% interval +0.0729 to +0.1648)"
+            },
+            {
+              "name": "noKindRegresses",
+              "met": true,
+              "detail": "soundRepetition: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+            },
+            {
+              "name": "noKindRegresses",
+              "met": true,
+              "detail": "wordRepetition: F1 +0.0000 (95% interval +0.0000 to +0.0000); precision +0.0000 (no interval)"
+            },
+            {
+              "name": "comparableInputs",
+              "met": true,
+              "detail": "identical label, mapping and scored-audio hashes and vote threshold"
+            }
+          ],
+          "promoted": true
+        }
+      },
+      "challengeCandidate": {
+        "clipCount": 1030,
+        "speakerCount": 95,
+        "microPrecision": 0.23129251700680273,
+        "microRecall": 0.11467116357504216,
+        "microF1": 0.15332581736189402,
+        "macroF1": 0.09800619434765778,
+        "falsePositiveClipRate": 0.2167577413479053,
+        "brierScore": null,
+        "byKind": {
+          "wordRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 53,
+            "trueNegative": 977,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "soundRepetition": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 140,
+            "trueNegative": 320,
+            "abstained": 649,
+            "coverage": 0.3699029126213592,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "prolongation": {
+            "truePositive": 41,
+            "falsePositive": 110,
+            "falseNegative": 60,
+            "trueNegative": 819,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.271523178807947,
+            "recall": 0.40594059405940597,
+            "f1": 0.32539682539682546
+          },
+          "block": {
+            "truePositive": 27,
+            "falsePositive": 116,
+            "falseNegative": 158,
+            "trueNegative": 729,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.1888111888111888,
+            "recall": 0.14594594594594595,
+            "f1": 0.16463414634146342
+          },
+          "filler": {
+            "truePositive": 0,
+            "falsePositive": 0,
+            "falseNegative": 114,
+            "trueNegative": 916,
+            "abstained": 0,
+            "coverage": 1.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        }
+      }
+    },
+    "limitations": [
+      "SEP-28k labels are clip-level votes by non-clinician annotators, not a clinical reference.",
+      "Clip classification only; no event timing is evaluated.",
+      "The detector receives clip audio without a transcript, so transcript-based detections cannot fire.",
+      "Precision, recall and F1 are 0 when their denominator is 0; check prevalence before reading them.",
+      "Intervals are percentile bootstrap intervals over speakers (or clips without a complete verified mapping); they do not cover label noise."
+    ]
+  }
+}
