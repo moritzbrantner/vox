@@ -5,13 +5,15 @@
 //! bun run benchmark:asr score --manifest docs/benchmarks/asr-challenge-set.json \
 //!   --root ~/.cache/uclass --baseline base.en.json --candidate large-v3-turbo.json --out report.json
 //!
-//! Transcription goes through the product's whisper.cpp path (`transcribe_audio_impl`), one call
-//! per chunk exactly as recording (8 s) and the post-session reference transcript (30 s) do.
+//! The default engine is the product's whisper.cpp path (`transcribe_audio_impl`), one call per
+//! chunk exactly as recording (8 s) and the post-session reference transcript (30 s) do.
+//! `--engine native-whisperx` runs the native-whisperx CLI once per recording instead (its own
+//! VAD, `--chunk-seconds` as its chunk size, wav2vec2 alignment), on `--device auto|cpu|cuda`.
 //! Hypotheses and reports contain corpus text: keep them next to the corpus, outside git.
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
 use sha2::{Digest, Sha256};
@@ -28,7 +30,7 @@ use asr_bench::{
     HypothesisSegment,
 };
 
-const USAGE: &str = "usage:\n  asr-eval transcribe --manifest <json> --root <dir> --model <whisper.cpp model> [--chunk-seconds 30] [--subset <id>]... [--limit N] --out <hypotheses.json>\n  asr-eval score --manifest <json> --root <dir> --baseline <hypotheses.json> --candidate <hypotheses.json> [--examples 20] --out <report.json>";
+const USAGE: &str = "usage:\n  asr-eval transcribe --manifest <json> --root <dir> --model <model> [--engine whisper-cpp|native-whisperx] [--native-whisperx <binary>] [--device auto|cpu|cuda] [--chunk-seconds 30] [--subset <id>]... [--limit N] --out <hypotheses.json>\n  asr-eval score --manifest <json> --root <dir> --baseline <hypotheses.json> --candidate <hypotheses.json> [--examples 20] --out <report.json>";
 
 const SAMPLE_RATE: u32 = 16_000;
 
@@ -42,11 +44,30 @@ fn main() -> ExitCode {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq)]
+enum Engine {
+    #[default]
+    WhisperCpp,
+    NativeWhisperx,
+}
+
+impl Engine {
+    fn id(self) -> &'static str {
+        match self {
+            Engine::WhisperCpp => "whisperCpp",
+            Engine::NativeWhisperx => "nativeWhisperx",
+        }
+    }
+}
+
 #[derive(Default)]
 struct Args {
     manifest: Option<PathBuf>,
     root: Option<PathBuf>,
     model: Option<String>,
+    engine: Engine,
+    native_whisperx: Option<PathBuf>,
+    device: Option<String>,
     chunk_seconds: f64,
     subsets: Vec<String>,
     limit: Option<usize>,
@@ -73,6 +94,21 @@ fn run(args: Vec<String>) -> Result<(), String> {
             "--manifest" => parsed.manifest = Some(PathBuf::from(value()?)),
             "--root" => parsed.root = Some(PathBuf::from(value()?)),
             "--model" => parsed.model = Some(value()?),
+            "--engine" => {
+                parsed.engine = match value()?.as_str() {
+                    "whisper-cpp" => Engine::WhisperCpp,
+                    "native-whisperx" => Engine::NativeWhisperx,
+                    other => return Err(format!("unknown engine {other}\n{USAGE}")),
+                }
+            }
+            "--native-whisperx" => parsed.native_whisperx = Some(PathBuf::from(value()?)),
+            "--device" => {
+                let device = value()?;
+                if !["auto", "cpu", "cuda"].contains(&device.as_str()) {
+                    return Err(format!("--device must be auto, cpu or cuda\n{USAGE}"));
+                }
+                parsed.device = Some(device);
+            }
             "--chunk-seconds" => {
                 parsed.chunk_seconds = value()?
                     .parse()
@@ -179,20 +215,34 @@ fn transcribe(
     let threads = std::thread::available_parallelism()
         .ok()
         .map(|threads| threads.get());
-    // Resumes an interrupted run of the same model, chunk length and thread count: its items are
-    // kept and the file is rewritten after every item.
+    let engine = match args.engine {
+        Engine::WhisperCpp => Engine::WhisperCpp.id().to_string(),
+        Engine::NativeWhisperx => format!(
+            "{} ({})",
+            Engine::NativeWhisperx.id(),
+            args.device.as_deref().unwrap_or("auto")
+        ),
+    };
+    // Resumes an interrupted run of the same engine, model, chunk length and thread count: its
+    // items are kept and the file is rewritten after every item.
     let mut run = fs::read_to_string(out)
         .ok()
         .and_then(|text| serde_json::from_str::<HypothesisRun>(&text).ok())
         .filter(|run| {
-            run.model == model && run.chunk_seconds == args.chunk_seconds && run.threads == threads
+            run.engine == engine
+                && run.model == model
+                && run.chunk_seconds == args.chunk_seconds
+                && run.threads == threads
         })
         .unwrap_or_else(|| HypothesisRun {
-            engine: "whisperCpp".to_string(),
-            model_bytes: whisper_cpp_model_path(&model)
-                .ok()
-                .and_then(|path| fs::metadata(path).ok())
-                .map(|metadata| metadata.len()),
+            engine: engine.clone(),
+            model_bytes: match args.engine {
+                Engine::WhisperCpp => whisper_cpp_model_path(&model)
+                    .ok()
+                    .and_then(|path| fs::metadata(path).ok())
+                    .map(|metadata| metadata.len()),
+                Engine::NativeWhisperx => None,
+            },
             model: model.clone(),
             language: String::new(),
             chunk_seconds: args.chunk_seconds,
@@ -220,8 +270,19 @@ fn transcribe(
             }
             run.language.clone_from(&item.language);
             let started = Instant::now();
-            let mut segments = Vec::new();
-            for (index, part) in samples.chunks(chunk).enumerate() {
+            let mut segments = match args.engine {
+                Engine::NativeWhisperx => {
+                    native_whisperx_segments(args, &model, &item.id, &item.language, &samples)
+                        .map_err(|error| format!("{}/{}: {error}", subset.id, item.id))?
+                }
+                Engine::WhisperCpp => Vec::new(),
+            };
+            let whisper_cpp_chunks = if args.engine == Engine::WhisperCpp {
+                samples.chunks(chunk).collect()
+            } else {
+                Vec::new()
+            };
+            for (index, part) in whisper_cpp_chunks.into_iter().enumerate() {
                 // The product's transcription rejects anything shorter than 0.5 s.
                 if part.len() < SAMPLE_RATE as usize / 2 {
                     continue;
@@ -260,7 +321,10 @@ fn transcribe(
                 wall_seconds,
                 segments,
             });
-            run.peak_rss_bytes = run.peak_rss_bytes.max(peak_rss_bytes());
+            run.peak_rss_bytes = run
+                .peak_rss_bytes
+                .max(peak_rss_bytes())
+                .max(peak_child_rss_bytes());
             let partial = out.with_extension("json.part");
             fs::write(
                 &partial,
@@ -271,6 +335,93 @@ fn transcribe(
         }
     }
     Ok(run)
+}
+
+/// Transcribes one recording with the native-whisperx CLI and returns its WhisperX JSON segments.
+/// The model loads once per recording, as it would for one post-session transcript, and that load
+/// is part of the measured wall time.
+fn native_whisperx_segments(
+    args: &Args,
+    model: &str,
+    item: &str,
+    language: &str,
+    samples: &[f32],
+) -> Result<Vec<HypothesisSegment>, String> {
+    let dir = std::env::temp_dir().join(format!("asr-eval-native-whisperx-{}", std::process::id()));
+    fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    let wav = dir.join(format!("{item}.wav"));
+    write_wav(&wav, samples)?;
+    let binary = args
+        .native_whisperx
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("native-whisperx"));
+    let output = Command::new(&binary)
+        .arg("transcribe")
+        .arg(&wav)
+        .args(["--model", model, "--language", language, "--device"])
+        .arg(args.device.as_deref().unwrap_or("auto"))
+        .arg("--chunk-size")
+        .arg(format!("{}", args.chunk_seconds.round() as u32))
+        .args(["--format", "json", "--basename", item, "--output-dir"])
+        .arg(&dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("{}: {error}", binary.display()))?;
+    let _ = fs::remove_file(&wav);
+    if !output.status.success() {
+        return Err(format!(
+            "native-whisperx failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let json_path = dir.join(format!("{item}.json"));
+    let text = fs::read_to_string(&json_path)
+        .map_err(|error| format!("{}: {error}", json_path.display()))?;
+    let _ = fs::remove_file(&json_path);
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| format!("{}: {error}", json_path.display()))?;
+    let segments = value
+        .get("segments")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("{} has no segments", json_path.display()))?;
+    segments
+        .iter()
+        .map(|segment| {
+            let seconds = |key: &str| segment.get(key).and_then(serde_json::Value::as_f64);
+            Ok(HypothesisSegment {
+                text: segment
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+                start_seconds: seconds("start").ok_or("segment without start")?,
+                end_seconds: seconds("end").ok_or("segment without end")?,
+            })
+        })
+        .collect()
+}
+
+fn write_wav(path: &Path, samples: &[f32]) -> Result<(), String> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: SAMPLE_RATE,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(path, spec)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    for sample in samples {
+        writer
+            .write_sample(*sample)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    writer
+        .finalize()
+        .map_err(|error| format!("{}: {error}", path.display()))
 }
 
 /// 16 kHz mono WAV samples as f32.
@@ -306,6 +457,29 @@ fn peak_rss_bytes() -> Option<u64> {
     let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
     let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kib * 1024)
+}
+
+/// Peak resident memory of the largest finished child process (the native-whisperx CLI).
+#[cfg(unix)]
+fn peak_child_rss_bytes() -> Option<u64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: getrusage only writes into the provided rusage struct.
+    let usage = unsafe {
+        if libc::getrusage(libc::RUSAGE_CHILDREN, usage.as_mut_ptr()) != 0 {
+            return None;
+        }
+        usage.assume_init()
+    };
+    // Linux reports ru_maxrss in KiB.
+    u64::try_from(usage.ru_maxrss)
+        .ok()
+        .filter(|kib| *kib > 0)
+        .map(|kib| kib * 1024)
+}
+
+#[cfg(not(unix))]
+fn peak_child_rss_bytes() -> Option<u64> {
+    None
 }
 
 fn print_summary(report: &asr_bench::ChallengeReport) {
