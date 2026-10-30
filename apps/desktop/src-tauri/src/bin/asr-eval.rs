@@ -8,7 +8,8 @@
 //! The default engine is the product's whisper.cpp path (`transcribe_audio_impl`), one call per
 //! chunk exactly as recording (8 s) and the post-session reference transcript (30 s) do.
 //! `--engine native-whisperx` runs the native-whisperx CLI once per recording instead (its own
-//! VAD, `--chunk-seconds` as its chunk size, wav2vec2 alignment), on `--device auto|cpu|cuda`.
+//! VAD (`--vad-method`, `--vad-model-bundle`), `--chunk-seconds` as its chunk size, wav2vec2
+//! alignment unless `--no-align`), on `--device auto|cpu|cuda`.
 //! Hypotheses and reports contain corpus text: keep them next to the corpus, outside git.
 
 use std::fs;
@@ -30,7 +31,7 @@ use asr_bench::{
     HypothesisSegment,
 };
 
-const USAGE: &str = "usage:\n  asr-eval transcribe --manifest <json> --root <dir> --model <model> [--engine whisper-cpp|native-whisperx] [--native-whisperx <binary>] [--device auto|cpu|cuda] [--chunk-seconds 30] [--subset <id>]... [--limit N] --out <hypotheses.json>\n  asr-eval score --manifest <json> --root <dir> --baseline <hypotheses.json> --candidate <hypotheses.json> [--examples 20] --out <report.json>";
+const USAGE: &str = "usage:\n  asr-eval transcribe --manifest <json> --root <dir> --model <model> [--engine whisper-cpp|native-whisperx] [--native-whisperx <binary>] [--device auto|cpu|cuda] [--vad-method <method>] [--vad-model-bundle <dir>] [--no-align] [--chunk-seconds 30] [--subset <id>]... [--limit N] --out <hypotheses.json>\n  asr-eval score --manifest <json> --root <dir> --baseline <hypotheses.json> --candidate <hypotheses.json> [--examples 20] --out <report.json>";
 
 const SAMPLE_RATE: u32 = 16_000;
 
@@ -68,6 +69,9 @@ struct Args {
     engine: Engine,
     native_whisperx: Option<PathBuf>,
     device: Option<String>,
+    vad_method: Option<String>,
+    vad_model_bundle: Option<PathBuf>,
+    no_align: bool,
     chunk_seconds: f64,
     subsets: Vec<String>,
     limit: Option<usize>,
@@ -109,6 +113,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 }
                 parsed.device = Some(device);
             }
+            "--vad-method" => parsed.vad_method = Some(value()?),
+            "--no-align" => parsed.no_align = true,
+            "--vad-model-bundle" => parsed.vad_model_bundle = Some(PathBuf::from(value()?)),
             "--chunk-seconds" => {
                 parsed.chunk_seconds = value()?
                     .parse()
@@ -218,9 +225,11 @@ fn transcribe(
     let engine = match args.engine {
         Engine::WhisperCpp => Engine::WhisperCpp.id().to_string(),
         Engine::NativeWhisperx => format!(
-            "{} ({})",
+            "{} ({}, {} VAD{})",
             Engine::NativeWhisperx.id(),
-            args.device.as_deref().unwrap_or("auto")
+            args.device.as_deref().unwrap_or("auto"),
+            args.vad_method.as_deref().unwrap_or("auto"),
+            if args.no_align { ", no alignment" } else { "" }
         ),
     };
     // Resumes an interrupted run of the same engine, model, chunk length and thread count: its
@@ -362,6 +371,17 @@ fn native_whisperx_segments(
         .arg(args.device.as_deref().unwrap_or("auto"))
         .arg("--chunk-size")
         .arg(format!("{}", args.chunk_seconds.round() as u32))
+        .args(
+            args.vad_method
+                .iter()
+                .flat_map(|method| ["--vad-method", method]),
+        )
+        .args(
+            args.vad_model_bundle
+                .iter()
+                .flat_map(|bundle| [Path::new("--vad-model-bundle"), bundle.as_path()]),
+        )
+        .args(args.no_align.then_some("--no-align"))
         .args(["--format", "json", "--basename", item, "--output-dir"])
         .arg(&dir)
         .stdin(Stdio::null())
