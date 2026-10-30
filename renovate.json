@@ -7,6 +7,12 @@
       "matchManagers": ["cargo"],
       "matchFileNames": ["apps/desktop/src-tauri/Cargo.toml"],
       "skipArtifactsUpdate": true
+    },
+    {
+      "description": "Cargo lock-file maintenance runs `cargo update`, which cannot resolve the local-only moenarch-* source-deps crates and always fails renovate/artifacts. Refresh the desktop Cargo.lock locally in source mode instead.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "enabled": false
     }
   ]
 }
