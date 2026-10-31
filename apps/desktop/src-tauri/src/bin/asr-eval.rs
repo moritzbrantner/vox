@@ -279,10 +279,17 @@ fn transcribe(
             }
             run.language.clone_from(&item.language);
             let started = Instant::now();
+            // A native-whisperx failure on one recording is a result, not a reason to stop: the
+            // item is kept without segments and its error is reported.
+            let mut error = None;
             let mut segments = match args.engine {
                 Engine::NativeWhisperx => {
                     native_whisperx_segments(args, &model, &item.id, &item.language, &samples)
-                        .map_err(|error| format!("{}/{}: {error}", subset.id, item.id))?
+                        .unwrap_or_else(|failure| {
+                            eprintln!("{}/{}: {failure}", subset.id, item.id);
+                            error = Some(failure);
+                            Vec::new()
+                        })
                 }
                 Engine::WhisperCpp => Vec::new(),
             };
@@ -329,6 +336,7 @@ fn transcribe(
                 audio_seconds,
                 wall_seconds,
                 segments,
+                error,
             });
             run.peak_rss_bytes = run
                 .peak_rss_bytes
@@ -513,6 +521,17 @@ fn print_summary(report: &asr_bench::ChallengeReport) {
         report.candidate.chunk_seconds,
         fmt(report.candidate.real_time_factor),
     );
+    for (role, run) in [
+        ("baseline", &report.baseline),
+        ("candidate", &report.candidate),
+    ] {
+        if !run.failed_items.is_empty() {
+            println!(
+                "{role} failed on (scored as all deletions): {}",
+                run.failed_items.join(", ")
+            );
+        }
+    }
     for subset in &report.subsets {
         match (&subset.baseline, &subset.candidate) {
             (Some(b), Some(c)) => println!(
