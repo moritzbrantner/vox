@@ -640,6 +640,36 @@ describe("transcription worker routes", () => {
     ]);
   });
 
+  it("passes the device preference to the worker, defaulting to auto", async () => {
+    const devices: (string | undefined)[] = [];
+    const handler = createComputeRequestHandler({
+      config: localConfig(),
+      speakerStore: memorySpeakerStore(),
+      nativeWorker: {
+        ...fakeWorker(),
+        async transcribeAudio(request) {
+          devices.push(request.device);
+          return fakeWorker().transcribeAudio(request);
+        },
+      },
+    });
+    const body = {
+      provider: "whisperCpp",
+      model: "tiny.en",
+      samples: Array.from({ length: 8_000 }, () => 0),
+      sampleRate: 16_000,
+    } satisfies TranscribeAudioRequest;
+
+    expect((await postJson(handler, "/transcriptions", body)).status).toBe(200);
+    expect((await postJson(handler, "/transcriptions", { ...body, device: "cpu" })).status).toBe(
+      200,
+    );
+    expect((await postJson(handler, "/transcriptions", { ...body, device: "tpu" })).status).toBe(
+      400,
+    );
+    expect(devices).toEqual(["auto", "cpu"]);
+  });
+
   it("returns invalid_request when multipart upload has no audio file", async () => {
     const handler = createComputeRequestHandler({
       config: localConfig(),

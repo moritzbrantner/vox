@@ -1,4 +1,5 @@
 import {
+  describeCompute,
   REFERENCE_TRANSCRIPT_MODEL,
   referenceTranscriptApplies,
   sessionTranscriptRevisions,
@@ -143,6 +144,7 @@ function describeProvenance(provenance: TranscriptProvenance) {
     );
   }
   if (chunkSeconds) parts.push(`${chunkSeconds} s chunks`);
+  if (provenance.compute) parts.push(describeCompute(provenance.compute));
   return parts.join(" · ");
 }
 

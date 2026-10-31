@@ -9,7 +9,7 @@ use audio_analysis_recognition::{
 };
 use audio_analysis_rhythm::{detect_onsets, onset_envelope, Onset, OnsetDetectorConfig};
 use audio_analysis_speakers::{
-    EnergyVadConfig, EnergyVoiceActivityDetector, SpeakerAudio, VoiceActivityDetector,
+    EnergyVoiceActivityDetector, SpeakerAudio, VadOptions, VoiceActivityDetector,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -773,14 +773,19 @@ fn analyze_acoustics(
     let silence_threshold = (noise_floor_rms * 1.5).max(0.006);
 
     let audio = SpeakerAudio::mono(&normalized, target_sample_rate)?;
-    let mut vad = EnergyVoiceActivityDetector::new(EnergyVadConfig {
-        rms_threshold: speech_threshold as f32,
-        frame_seconds: 0.03,
-        hop_seconds: 0.01,
-        min_speech_seconds: 0.08,
-        merge_gap_seconds: 0.08,
-    })?;
-    let speech_spans = vad.detect_speech(&audio)?;
+    let speech_spans = EnergyVoiceActivityDetector
+        .detect_speech(
+            &audio,
+            &VadOptions {
+                rms_threshold: speech_threshold as f32,
+                frame_seconds: 0.03,
+                hop_seconds: 0.01,
+                min_speech_seconds: 0.08,
+                merge_gap_seconds: 0.08,
+                ..VadOptions::unpadded()
+            },
+        )?
+        .segments;
 
     let frame_spec = FrameSpec::new(frame_size, hop_size)?;
     let envelope = onset_envelope(&normalized, target_sample_rate, frame_spec)?;

@@ -17,11 +17,16 @@ def main() -> None:
     )
     parser.add_argument("--model", default="small.en", help="faster-whisper model name or path.")
     parser.add_argument("--language", default="en", help="Language hint.")
-    parser.add_argument("--device", default="cpu", help="faster-whisper device, e.g. auto/cuda/cpu.")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", "cuda", "cpu"],
+        help="auto uses CUDA when a GPU is usable and falls back to the CPU.",
+    )
     parser.add_argument(
         "--compute-type",
-        default="int8",
-        help="faster-whisper compute type, e.g. default/float16/int8.",
+        default=None,
+        help="faster-whisper compute type (default: float16 on CUDA, int8 on CPU).",
     )
     parser.add_argument(
         "--output",
@@ -32,9 +37,8 @@ def main() -> None:
 
     ensure_cuda_libraries(args.device)
 
-    from faster_whisper import WhisperModel
-
-    model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+    model, device = load_model(args.model, args.device, args.compute_type)
+    print(f"Transcribing on {device}", file=sys.stderr)
     segments_iter, info = model.transcribe(
         args.audio,
         language=args.language,
@@ -69,6 +73,7 @@ def main() -> None:
     output = {
         "engine": "faster-whisper",
         "model": args.model,
+        "device": device,
         "language": info.language,
         "languageProbability": info.language_probability,
         "durationSeconds": info.duration,
@@ -79,6 +84,23 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2) + "\n")
     print(f"Wrote {len(segments)} segments to {output_path}")
+
+
+def load_model(name: str, device: str, compute_type: str | None):
+    """Loads the model on CUDA when allowed and usable, otherwise on the CPU."""
+    import ctranslate2
+    from faster_whisper import WhisperModel
+
+    if device != "cpu" and ctranslate2.get_cuda_device_count() > 0:
+        try:
+            return WhisperModel(name, device="cuda", compute_type=compute_type or "float16"), "cuda"
+        except (RuntimeError, ValueError) as error:
+            if device == "cuda":
+                raise
+            print(f"CUDA unavailable, using the CPU: {error}", file=sys.stderr)
+    elif device == "cuda":
+        raise SystemExit("--device cuda was requested but no CUDA device is usable")
+    return WhisperModel(name, device="cpu", compute_type=compute_type or "int8"), "cpu"
 
 
 def ensure_cuda_libraries(device: str) -> None:

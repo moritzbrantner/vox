@@ -260,9 +260,9 @@ export function loadTranscriptionSettingsFromStorage(
     const model = engine.models.includes(parsed?.model ?? "")
       ? (parsed?.model ?? engine.models[0])
       : engine.models[0];
-    return { engine: engine.id, model };
+    return { engine: engine.id, model, device: parsed?.device === "cpu" ? "cpu" : "auto" };
   } catch {
-    return { engine: engines[0].id, model: engines[0].models[0] };
+    return { engine: engines[0].id, model: engines[0].models[0], device: "auto" };
   }
 }
 

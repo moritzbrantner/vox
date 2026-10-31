@@ -42,6 +42,8 @@ pub struct TranscribeAudioRequest {
     pub provider: TranscriptionProvider,
     pub model: String,
     pub language: Option<String>,
+    #[serde(default)]
+    pub device: DevicePreference,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +54,46 @@ pub struct TranscribeAudioFileRequest {
     pub model: String,
     pub language: Option<String>,
     pub ffmpeg_bin: Option<String>,
+    #[serde(default)]
+    pub device: DevicePreference,
+}
+
+/// Where whisper.cpp-engine transcription may run. `Auto` uses the GPU when one is usable and
+/// falls back to the CPU; `Cpu` never tries the GPU.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DevicePreference {
+    #[default]
+    Auto,
+    Cpu,
+}
+
+/// The runtime that produced a transcript.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ComputeBackend {
+    /// native-whisperx (Candle) on CUDA.
+    NativeWhisperx,
+    /// whisper.cpp from audio-analysis.
+    WhisperCpp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ComputeDevice {
+    Cuda,
+    Cpu,
+}
+
+/// Which backend and device transcribed the audio, and why the GPU was not used when it was
+/// allowed but unavailable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionCompute {
+    pub backend: ComputeBackend,
+    pub device: ComputeDevice,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -100,6 +142,10 @@ pub struct TranscribeAudioResult {
     pub segments: Vec<TranscribedSegment>,
     pub provider: TranscriptionProviderResult,
     pub model: String,
+    /// Backend and device of the whisper.cpp engine; absent for external CLI engines, whose
+    /// device this app does not choose.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compute: Option<TranscriptionCompute>,
     /// audio-analysis capture observations of the decoded upload (file transcription only),
     /// measured as native analysis measures its audio. Absent when the file could not be measured.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -299,6 +345,7 @@ pub fn transcribe_audio_file_impl(
         request.provider,
         &request.model,
         request.language.as_deref(),
+        request.device,
         &request.path,
         &temp_dir,
         request.ffmpeg_bin.as_deref(),
@@ -451,6 +498,7 @@ fn transcribe_with_temp_dir(
         request.provider,
         &request.model,
         request.language.as_deref(),
+        request.device,
         &wav_path,
         temp_dir,
         None,
@@ -461,6 +509,7 @@ fn transcribe_with_input_path(
     provider: TranscriptionProvider,
     model: &str,
     language: Option<&str>,
+    device: DevicePreference,
     input_path: &Path,
     temp_dir: &Path,
     ffmpeg_bin: Option<&str>,
@@ -476,6 +525,18 @@ fn transcribe_with_input_path(
         TranscriptionProvider::WhisperCpp => {
             let wav_path = whisper_cpp_input_path(input_path, temp_dir, ffmpeg_bin)?;
             let parsed_model = parse_whisper_cpp_model(&model)?;
+            let gpu_unavailable_reason = match device {
+                DevicePreference::Cpu => None,
+                DevicePreference::Auto => match crate::native_whisperx::transcribe_on_gpu(
+                    &wav_path,
+                    parsed_model.id(),
+                    language.as_deref(),
+                    temp_dir,
+                ) {
+                    Ok(transcript) => return Ok(gpu_result(transcript, parsed_model)),
+                    Err(reason) => Some(reason),
+                },
+            };
             let store = WhisperCppModelStore::default();
             if !store.model_path(parsed_model).is_file() {
                 download_transcription_model_impl(
@@ -493,11 +554,18 @@ fn transcribe_with_input_path(
                 threads: None,
             });
             let result = transcriber.transcribe(&wav_path)?;
-            build_result(
-                result,
-                TranscriptionProviderResult::WhisperCpp,
-                parsed_model.id().to_string(),
-            )
+            TranscribeAudioResult {
+                compute: Some(TranscriptionCompute {
+                    backend: ComputeBackend::WhisperCpp,
+                    device: ComputeDevice::Cpu,
+                    gpu_unavailable_reason,
+                }),
+                ..build_result(
+                    result,
+                    TranscriptionProviderResult::WhisperCpp,
+                    parsed_model.id().to_string(),
+                )
+            }
         }
         TranscriptionProvider::WhisperCli => {
             let mut transcriber = WhisperCliTranscriber::new("whisper")
@@ -635,6 +703,38 @@ fn build_result(
         segments,
         provider,
         model,
+        compute: None,
+        capture_metrics: None,
+    }
+}
+
+/// A whisper.cpp-engine result transcribed by native-whisperx on the GPU. The model is the same
+/// Whisper checkpoint (native-whisperx loads its safetensors), so the engine and model ids stay.
+fn gpu_result(
+    transcript: crate::native_whisperx::GpuTranscript,
+    model: WhisperCppModel,
+) -> TranscribeAudioResult {
+    TranscribeAudioResult {
+        text: Some(transcript.text),
+        language: transcript.language,
+        segments: transcript
+            .segments
+            .into_iter()
+            .map(|segment| TranscribedSegment {
+                text: segment.text,
+                start_seconds: segment.start_seconds,
+                end_seconds: segment.end_seconds,
+                confidence: None,
+                is_final: true,
+            })
+            .collect(),
+        provider: TranscriptionProviderResult::WhisperCpp,
+        model: model.id().to_string(),
+        compute: Some(TranscriptionCompute {
+            backend: ComputeBackend::NativeWhisperx,
+            device: ComputeDevice::Cuda,
+            gpu_unavailable_reason: None,
+        }),
         capture_metrics: None,
     }
 }
@@ -733,6 +833,7 @@ mod tests {
             model: "base.en".to_string(),
             language: None,
             ffmpeg_bin: None,
+            device: DevicePreference::Auto,
         })
         .unwrap_err();
 

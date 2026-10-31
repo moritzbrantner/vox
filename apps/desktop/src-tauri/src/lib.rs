@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod asr_bench;
 mod corpus;
+mod native_whisperx;
 mod prediction;
 mod speech_analysis;
 mod speech_pipeline;

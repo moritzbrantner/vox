@@ -8,7 +8,7 @@
 // Saved: a session's transcript has revisions. The provisional transcript made while recording
 // is the first; the automatic post-session reference re-transcription appends a new current revision and
 // keeps every earlier one with its provenance and a word-level reconciliation.
-import type { TranscriptionEngineId, TranscriptSegment } from "./index";
+import type { TranscriptCompute, TranscriptionEngineId, TranscriptSegment } from "./index";
 import { observationFingerprint, type SessionRecord } from "./sessions";
 
 // ---------------------------------------------------------------------------------------------
@@ -139,6 +139,11 @@ export type TranscriptProvenance = {
   detectedLanguage: string | null;
   preprocessing: TranscriptPreprocessing;
   limitations: TranscriptLimitation[];
+  /**
+   * Backend and device that ran the model (vox#139). Absent when the engine does not report it
+   * (browser speech, external CLIs) and on transcripts saved before it was recorded.
+   */
+  compute?: TranscriptCompute;
 };
 
 /** Provenance of a transcription run, with the limitations its combination is known to have. */
@@ -148,6 +153,7 @@ export function transcriptProvenance(input: {
   language: string;
   detectedLanguage?: string | null;
   preprocessing: TranscriptPreprocessing;
+  compute?: TranscriptCompute | null;
 }): TranscriptProvenance {
   const limitations: TranscriptLimitation[] = [];
   const selected = baseLanguage(input.language);
@@ -168,6 +174,7 @@ export function transcriptProvenance(input: {
     detectedLanguage: input.detectedLanguage ?? null,
     preprocessing: input.preprocessing,
     limitations,
+    ...(input.compute ? { compute: input.compute } : {}),
   };
 }
 

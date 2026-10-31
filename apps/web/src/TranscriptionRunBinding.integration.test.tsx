@@ -126,4 +126,58 @@ describe("transcription run binding and verbatim evidence (vox#26)", () => {
       (JSON.parse(localStorage.getItem(STORE_KEY)!) as SavedSession[])[0].segments[0].text,
     ).toBe(VERBATIM);
   });
+
+  it("sends the device preference and records the backend and device that ran (vox#139)", async () => {
+    const devices: unknown[] = [];
+    const compute = { backend: "nativeWhisperx", device: "cuda" } as const;
+    const invoke = vi.spyOn(tauriCore, "invoke").mockImplementation(async (command, args) => {
+      if (command === "transcription_models") {
+        return { models: [{ id: "base.en", label: "base.en", cached: true, downloadable: true }] };
+      }
+      if (command === "transcribe_audio") {
+        devices.push((args as { request: { device: unknown } }).request.device);
+        return {
+          segments: [{ text: "hello", startSeconds: 0, endSeconds: 1, isFinal: true }],
+          provider: "whisperCpp",
+          model: "base.en",
+          compute,
+        };
+      }
+      if (command === "analyze_speech_session") {
+        const request = (args as { request: Parameters<typeof fallbackAnalyze>[0] }).request;
+        return { ...fallbackAnalyze(request), analyzerVersion: "1" };
+      }
+      throw new Error(`Native command ${command} unavailable in this fixture`);
+    });
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: { invoke } });
+    let capture: recorderModule.BrowserRecorderOptions | undefined;
+    vi.spyOn(recorderModule, "createBrowserRecorder").mockImplementation(async (options) => {
+      capture = options;
+      return { sampleRate: 16000, capture: TEST_CAPTURE, stop: async () => {} };
+    });
+
+    renderApp();
+    const cpuOnly = screen.getByLabelText("CPU only");
+    expect(cpuOnly).not.toBeChecked();
+    await userEvent.click(cpuOnly);
+    expect(JSON.parse(localStorage.getItem(TRANSCRIPTION_KEY)!).device).toBe("cpu");
+    await userEvent.click(cpuOnly);
+    await userEvent.click(await screen.findByRole("button", { name: /^record$/i }));
+    await waitFor(() => expect(capture).toBeDefined());
+    act(() => capture!.onSamples(new Float32Array(16000 * 10).fill(0.2)));
+    await userEvent.click(screen.getByRole("button", { name: /^stop$/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
+
+    expect(devices.length).toBeGreaterThan(0);
+    expect(new Set(devices)).toEqual(new Set(["auto"]));
+    expect(screen.getByLabelText("Transcription device")).toHaveTextContent(
+      "native-whisperx on CUDA",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
+    );
+    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!) as SavedSession[];
+    expect(saved.transcript?.provenance?.compute).toEqual(compute);
+  });
 });

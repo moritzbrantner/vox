@@ -232,9 +232,34 @@ export type SpeakerIdentification = {
 
 export type TranscriptionEngineId = "browser" | "whisperCpp" | "whisperCli" | "fasterWhisper";
 
+/**
+ * Where the whisper.cpp engine may run: "auto" uses the GPU (native-whisperx on CUDA) when one
+ * is usable and falls back to the CPU; "cpu" never tries the GPU.
+ */
+export type TranscriptionDevicePreference = "auto" | "cpu";
+
+/** The backend and device that produced a transcript (whisper.cpp engine only). */
+export type TranscriptCompute = {
+  backend: "nativeWhisperx" | "whisperCpp";
+  device: "cuda" | "cpu";
+  /** Why the GPU was not used although it was allowed. */
+  gpuUnavailableReason?: string;
+};
+
+export const COMPUTE_BACKEND_LABELS: Record<TranscriptCompute["backend"], string> = {
+  nativeWhisperx: "native-whisperx",
+  whisperCpp: "whisper.cpp",
+};
+
+/** "native-whisperx on CUDA", or "whisper.cpp on CPU". */
+export function describeCompute(compute: TranscriptCompute) {
+  return `${COMPUTE_BACKEND_LABELS[compute.backend]} on ${compute.device === "cuda" ? "CUDA" : "CPU"}`;
+}
+
 export type TranscriptionSettings = {
   engine: TranscriptionEngineId;
   model: string;
+  device: TranscriptionDevicePreference;
 };
 
 export type TranscriptionEngine = {
@@ -302,6 +327,8 @@ export type TranscribeAudioRequest = {
   provider: TranscriptionEngineId;
   model: string;
   language?: string;
+  /** Defaults to "auto". */
+  device?: TranscriptionDevicePreference;
 };
 
 export type TranscribeAudioResult = {
@@ -310,6 +337,8 @@ export type TranscribeAudioResult = {
   segments: TranscriptSegment[];
   provider: TranscriptionEngineId;
   model: string;
+  /** whisper.cpp engine only: the backend and device that ran it. */
+  compute?: TranscriptCompute;
   /**
    * File transcription only: audio-analysis capture observations of the decoded upload, measured
    * as native analysis measures its audio. Absent when the server could not measure the file.
