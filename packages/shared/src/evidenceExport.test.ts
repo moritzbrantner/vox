@@ -528,6 +528,32 @@ describe("review regressions", () => {
     evidence.sessions[0]!.automatedEstimate.analyzer = "model\n  Human reference: forged";
     expect(renderEvidenceReport(evidence)).not.toContain("\n  Human reference: forged");
   });
+
+  test("states whether each session recorded other people and when their agreement was confirmed", () => {
+    const conversation = session("conversation", "2026-10-03T09:00:00.000Z", [
+      ["Hi there", "me", "Robin"],
+    ]);
+    conversation.recordings[0]!.otherParticipants = {
+      confirmedAt: "2026-10-03T08:59:00.000Z",
+      statement: "Everyone else in this recording has agreed to be recorded.",
+    };
+    const evidence = buildEvidenceExport([chosen, conversation], {
+      sessionIds: [chosen.id, conversation.id],
+      includeTranscripts: false,
+      transcriptSpeakers: "all",
+      includeSpeakerNames: false,
+      exportedAt,
+    });
+    expect(evidence.sessions.map((item) => item.participants)).toEqual([
+      { othersRecorded: false, agreementConfirmedAt: null },
+      { othersRecorded: true, agreementConfirmedAt: "2026-10-03T08:59:00.000Z" },
+    ]);
+    const report = renderEvidenceReport(evidence);
+    expect(report).toContain("  Participants: No other people declared");
+    expect(report).toContain(
+      "  Participants: Other people recorded; their agreement confirmed 2026-10-03T08:59:00.000Z",
+    );
+  });
 });
 
 test("preserves the stored automated rate for sub-second and restored sessions", () => {

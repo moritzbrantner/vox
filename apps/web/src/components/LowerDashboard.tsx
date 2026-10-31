@@ -8,7 +8,11 @@ import {
   TrendingUp,
   Waves,
 } from "lucide-react";
-import { isReplayable } from "@stutter-tracker/shared";
+import {
+  describeParticipants,
+  isReplayable,
+  sessionParticipantsConfirmation,
+} from "@stutter-tracker/shared";
 import { isScoreWithheld } from "../audio/captureQuality";
 import { TIMING_NOT_ALIGNED } from "./TranscriptText";
 import { type ReactNode, useState } from "react";
@@ -635,6 +639,14 @@ function SessionsPanel({
                     <span className={`mt-0.5 block text-xs ${mutedTextClass}`}>
                       {analysisProvenanceLabel(session)}
                     </span>
+                    {sessionParticipantsConfirmation(session) && (
+                      <span className={`mt-0.5 block text-xs ${mutedTextClass}`}>
+                        {describeParticipants(
+                          sessionParticipantsConfirmation(session)!.confirmedAt,
+                          (iso) => new Date(iso).toLocaleString(),
+                        )}
+                      </span>
+                    )}
                   </span>
                   <strong className="shrink-0 text-sm">
                     {isScoreWithheld(session.report)

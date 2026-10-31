@@ -264,3 +264,20 @@ describe("mobile capture path end to end", () => {
     expect(row(mobileMetricRows(gated), "Severity")).toBe("Unknown");
   });
 });
+
+describe("mobile recordings of other people", () => {
+  it("stores this session's agreement confirmation with the recording only when given", () => {
+    const confirmation = {
+      confirmedAt: "2026-10-31T10:00:00.000Z",
+      statement: "Everyone else in this recording has agreed to be recorded.",
+    };
+    const input = { sessionId: "c", runId: "r", sampleRate: SOURCE_RATE, channelCount: 1 };
+    expect(
+      mobileRecordingDescriptor({ ...input, soloSpeaker: false, otherParticipants: confirmation })
+        .otherParticipants,
+    ).toEqual(confirmation);
+    expect(mobileRecordingDescriptor({ ...input, soloSpeaker: true })).not.toHaveProperty(
+      "otherParticipants",
+    );
+  });
+});

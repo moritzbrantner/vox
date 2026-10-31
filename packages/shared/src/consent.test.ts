@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  canStartWithParticipants,
   CONSENT_PURPOSES,
   type ConsentDecision,
+  isOtherParticipantsConfirmation,
+  OTHER_PARTICIPANTS_STATEMENT,
+  participantsConfirmationForStart,
+  sessionParticipantsConfirmation,
   ConsentRequiredError,
   currentConsent,
   EMPTY_CONSENT_LEDGER,
@@ -122,5 +127,44 @@ describe("consent ledger", () => {
     expect(() =>
       recordConsent(EMPTY_CONSENT_LEDGER, { purpose: "recording" as never, granted: true }),
     ).toThrow("Unknown consent purpose");
+  });
+});
+
+describe("recording other participants", () => {
+  const at = new Date("2026-10-31T10:00:00.000Z");
+
+  test("recording only the user needs no confirmation and stores none", () => {
+    const solo = { othersRecorded: false, othersAgreed: false };
+    expect(canStartWithParticipants(solo)).toBe(true);
+    expect(participantsConfirmationForStart(solo, at)).toBeNull();
+  });
+
+  test("a session that records others cannot start until the user confirms", () => {
+    const unconfirmed = { othersRecorded: true, othersAgreed: false };
+    expect(canStartWithParticipants(unconfirmed)).toBe(false);
+    expect(() => participantsConfirmationForStart(unconfirmed, at)).toThrow("has agreed");
+  });
+
+  test("a confirmed start records when and what was confirmed", () => {
+    const confirmation = participantsConfirmationForStart(
+      { othersRecorded: true, othersAgreed: true },
+      at,
+    );
+    expect(confirmation).toEqual({
+      confirmedAt: "2026-10-31T10:00:00.000Z",
+      statement: OTHER_PARTICIPANTS_STATEMENT,
+    });
+    expect(isOtherParticipantsConfirmation(confirmation)).toBe(true);
+    expect(
+      sessionParticipantsConfirmation({ recordings: [{}, { otherParticipants: confirmation! }] }),
+    ).toBe(confirmation);
+    expect(sessionParticipantsConfirmation({ recordings: [{}] })).toBeNull();
+  });
+
+  test("rejects malformed stored confirmations", () => {
+    expect(isOtherParticipantsConfirmation({ confirmedAt: "never", statement: "x" })).toBe(false);
+    expect(isOtherParticipantsConfirmation({ confirmedAt: at.toISOString(), statement: "" })).toBe(
+      false,
+    );
   });
 });

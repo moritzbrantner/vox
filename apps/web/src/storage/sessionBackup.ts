@@ -1,6 +1,7 @@
 import {
   type LegacySessionRecord,
   migrateSessionRecord,
+  isOtherParticipantsConfirmation,
   isRunCaptureQuality,
   SESSION_SCHEMA_VERSION,
   TRANSCRIPTION_ENGINES,
@@ -354,7 +355,9 @@ export function isRecordingDescriptor(value: unknown) {
     value.discontinuities.every(isCaptureInterval) &&
     (value.speakerAssessment === "singleSpeakerDeclared" ||
       value.speakerAssessment === "unknown" ||
-      value.speakerAssessment === "overlapDetected")
+      value.speakerAssessment === "overlapDetected") &&
+    (value.otherParticipants === undefined ||
+      isOtherParticipantsConfirmation(value.otherParticipants))
   );
 }
 

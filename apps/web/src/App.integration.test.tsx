@@ -1364,6 +1364,43 @@ describe("capture-quality gate", () => {
     });
   });
 
+  it("starts a session with other people only after this session's confirmation", async () => {
+    const { record } = await recordWithNativeMetrics(measured());
+    renderApp();
+    const recordButton = () => screen.getByRole("button", { name: /^record$/i });
+    const agreement = "Everyone else in this recording has agreed to be recorded.";
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Recording other people" }));
+    expect(recordButton()).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: agreement }));
+    expect(recordButton()).toBeEnabled();
+    await record();
+
+    // The confirmation covered that session only; the next one needs it again.
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: agreement })).not.toBeChecked(),
+    );
+    expect(recordButton()).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
+    );
+    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!);
+    expect(saved.recordings).toEqual([
+      expect.objectContaining({
+        speakerAssessment: "unknown",
+        otherParticipants: {
+          confirmedAt: expect.any(String),
+          statement: agreement,
+        },
+      }),
+    ]);
+    expect(
+      await screen.findByText(/Other people recorded; their agreement confirmed/),
+    ).toBeInTheDocument();
+  });
+
   it("says which part of a long capture the quality check covered", async () => {
     localStorage.setItem("stutter-tracker:solo-speaker", "true");
     const { analyzed, record } = await recordWithNativeMetrics(

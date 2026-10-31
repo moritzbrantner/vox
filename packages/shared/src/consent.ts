@@ -152,3 +152,81 @@ function isValidScope(purpose: ConsentPurpose, scope: string) {
     return false;
   }
 }
+
+// Recording other people (#66). Pressing Record covers recording the user alone, but a session
+// that knowingly records others starts only after the user confirms, for that session, that
+// everyone else recorded agreed. The confirmation is stored on that capture's descriptor, so it
+// belongs to one session and is never carried over to the next.
+
+/** The statement the user confirms; stored with the confirmation so the record says what was confirmed. */
+export const OTHER_PARTICIPANTS_STATEMENT =
+  "Everyone else in this recording has agreed to be recorded.";
+
+export type OtherParticipantsConfirmation = {
+  confirmedAt: string;
+  statement: string;
+};
+
+/** What the user declared before pressing Record. */
+export type ParticipantsDeclaration = {
+  /** The session will knowingly record people other than the user. */
+  othersRecorded: boolean;
+  /** The user ticked the agreement confirmation for this session. */
+  othersAgreed: boolean;
+};
+
+export const OTHER_PARTICIPANTS_REQUIRED_MESSAGE =
+  "Confirm that everyone else in the recording has agreed before you start.";
+
+/** Whether recording may start under this declaration. */
+export function canStartWithParticipants(declaration: ParticipantsDeclaration) {
+  return !declaration.othersRecorded || declaration.othersAgreed;
+}
+
+/**
+ * The confirmation to store with a capture that is starting: null when only the user is recorded.
+ * Throws when others are recorded without confirmation, so such a session cannot start.
+ */
+export function participantsConfirmationForStart(
+  declaration: ParticipantsDeclaration,
+  at: Date = new Date(),
+): OtherParticipantsConfirmation | null {
+  if (!declaration.othersRecorded) return null;
+  if (!declaration.othersAgreed) throw new Error(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
+  return { confirmedAt: at.toISOString(), statement: OTHER_PARTICIPANTS_STATEMENT };
+}
+
+/** The confirmation stored with a session's capture; null when it recorded no one else. */
+export function sessionParticipantsConfirmation(session: {
+  recordings: readonly { otherParticipants?: OtherParticipantsConfirmation }[];
+}): OtherParticipantsConfirmation | null {
+  return (
+    session.recordings.find((recording) => recording.otherParticipants)?.otherParticipants ?? null
+  );
+}
+
+/**
+ * One line for review and export, e.g. "Other people recorded; their agreement confirmed …".
+ * `confirmedAt` is null when the session declared no one else.
+ */
+export function describeParticipants(
+  confirmedAt: string | null,
+  formatTime: (iso: string) => string = (iso) => iso,
+) {
+  return confirmedAt
+    ? `Other people recorded; their agreement confirmed ${formatTime(confirmedAt)}`
+    : "No other people declared";
+}
+
+export function isOtherParticipantsConfirmation(
+  value: unknown,
+): value is OtherParticipantsConfirmation {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as OtherParticipantsConfirmation).confirmedAt === "string" &&
+    Number.isFinite(Date.parse((value as OtherParticipantsConfirmation).confirmedAt)) &&
+    typeof (value as OtherParticipantsConfirmation).statement === "string" &&
+    (value as OtherParticipantsConfirmation).statement.length > 0
+  );
+}

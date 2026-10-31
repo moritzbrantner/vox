@@ -1,8 +1,14 @@
 import { createComputeClient, processingPolicyForServerUrl } from "@stutter-tracker/compute-client";
 import {
   type AnalysisReport,
+  canStartWithParticipants,
   type ConsentLedger,
+  describeParticipants,
   EMPTY_CONSENT_LEDGER,
+  OTHER_PARTICIPANTS_REQUIRED_MESSAGE,
+  OTHER_PARTICIPANTS_STATEMENT,
+  type OtherParticipantsConfirmation,
+  participantsConfirmationForStart,
   type TranscriptionEngineId,
   type TranscriptionModelStatus,
 } from "@stutter-tracker/shared";
@@ -64,12 +70,25 @@ export default function App() {
   const [modelStatuses, setModelStatuses] = useState<TranscriptionModelStatus[]>([]);
   // "Only I speak": without it a result stays unknown, as on the web.
   const [soloSpeaker, setSoloSpeaker] = useState(false);
+  // Recording other people needs a confirmation made for this session (#66); the agreement is
+  // cleared whenever a recording ends, so it never carries over.
+  const [othersRecorded, setOthersRecorded] = useState(false);
+  const [othersAgreed, setOthersAgreed] = useState(false);
+  const [lastParticipants, setLastParticipants] = useState<OtherParticipantsConfirmation | null>(
+    null,
+  );
   const audioRecorder = useAudioRecorder(RECORDING_PRESET);
   const recorderState = useAudioRecorderState(audioRecorder);
+  useEffect(() => {
+    if (!recorderState.isRecording) setOthersAgreed(false);
+  }, [recorderState.isRecording]);
   // Start/stop/cancel go through one controller, so a late prepare or upload never attaches to
   // another capture.
   const recording = useMemo(() => createRecordingController(audioRecorder), [audioRecorder]);
-  const captureRef = useRef<{ soloSpeaker: boolean } | null>(null);
+  const captureRef = useRef<{
+    soloSpeaker: boolean;
+    otherParticipants: OtherParticipantsConfirmation | null;
+  } | null>(null);
   useEffect(() => {
     return () => {
       void recording.cancel();
@@ -157,15 +176,26 @@ export default function App() {
       setStatus("Microphone permission was denied");
       return;
     }
+    // A session that records other people does not start without this session's confirmation.
+    const participants = { othersRecorded, othersAgreed };
+    if (!canStartWithParticipants(participants)) {
+      setStatus(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
+      return;
+    }
     setReport(null);
     setTranscript("");
+    setLastParticipants(null);
     setStatus("Preparing recording");
     // The declaration applies to the recording it was made for.
-    const declaration = { soloSpeaker };
+    const declaration = {
+      soloSpeaker: soloSpeaker && !othersRecorded,
+      otherParticipants: participantsConfirmationForStart(participants),
+    };
     try {
       const captureId = await recording.start();
       if (!captureId) return;
       captureRef.current = declaration;
+      setLastParticipants(declaration.otherParticipants);
       setStatus("Recording");
     } catch (error) {
       setStatus(mobileErrorMessage(error));
@@ -184,6 +214,7 @@ export default function App() {
         stopped.uri,
         captureSeconds,
         captureRef.current?.soloSpeaker ?? false,
+        captureRef.current?.otherParticipants ?? null,
       );
     } catch (error) {
       setStatus(mobileErrorMessage(error));
@@ -201,6 +232,7 @@ export default function App() {
     uri: string,
     captureSeconds: number,
     declaredSolo: boolean,
+    otherParticipants: OtherParticipantsConfirmation | null,
   ) {
     // Results of a cancelled or superseded capture are dropped.
     const isCurrent = () => recording.isCurrent(captureId);
@@ -230,6 +262,7 @@ export default function App() {
         sampleRate: result.captureMetrics?.sampleRate ?? RECORDING_PRESET.sampleRate,
         channelCount: result.captureMetrics?.channels ?? RECORDING_PRESET.numberOfChannels,
         soloSpeaker: declaredSolo,
+        otherParticipants,
       });
       setReport(withMobileCaptureQuality(analyzed, result, descriptor, captureSeconds));
       setStatus("Complete");
@@ -332,18 +365,50 @@ export default function App() {
             <Text style={styles.label}>Only I speak</Text>
             <Switch
               value={soloSpeaker}
-              onValueChange={setSoloSpeaker}
+              onValueChange={(declared) => {
+                setSoloSpeaker(declared);
+                if (declared) {
+                  setOthersRecorded(false);
+                  setOthersAgreed(false);
+                }
+              }}
               disabled={busy}
               accessibilityLabel="Only I speak"
             />
           </View>
+          <View style={styles.toggleRow}>
+            <Text style={styles.label}>Recording other people</Text>
+            <Switch
+              value={othersRecorded}
+              onValueChange={(declared) => {
+                setOthersRecorded(declared);
+                setOthersAgreed(false);
+                if (declared) setSoloSpeaker(false);
+              }}
+              disabled={busy}
+              accessibilityLabel="Recording other people"
+            />
+          </View>
+          {othersRecorded && (
+            <View style={styles.toggleRow}>
+              <Text style={[styles.label, styles.toggleText]}>{OTHER_PARTICIPANTS_STATEMENT}</Text>
+              <Switch
+                value={othersAgreed}
+                onValueChange={setOthersAgreed}
+                disabled={busy}
+                accessibilityLabel={OTHER_PARTICIPANTS_STATEMENT}
+              />
+            </View>
+          )}
           <TouchableOpacity
             style={recorderState.isRecording ? styles.stopButton : styles.primaryButton}
             onPress={recorderState.isRecording ? stopRecording : startRecording}
             disabled={
               isUploading ||
               permissionGranted === false ||
-              (!recorderState.isRecording && destination.kind !== "server")
+              (!recorderState.isRecording &&
+                (destination.kind !== "server" ||
+                  !canStartWithParticipants({ othersRecorded, othersAgreed })))
             }
           >
             <Text style={styles.primaryButtonText}>
@@ -362,6 +427,13 @@ export default function App() {
             </Text>
           )}
           {!!lastRecordingUri && <Text style={styles.detail}>{lastRecordingUri}</Text>}
+          {lastParticipants && (
+            <Text style={styles.detail}>
+              {describeParticipants(lastParticipants.confirmedAt, (iso) =>
+                new Date(iso).toLocaleString(),
+              )}
+            </Text>
+          )}
           <Text style={styles.transcript}>{transcript || "Transcript will appear here."}</Text>
         </Panel>
 
@@ -532,6 +604,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  toggleText: {
+    flexShrink: 1,
+    marginRight: 12,
   },
   qualityWarning: {
     backgroundColor: "#fbf3e8",
