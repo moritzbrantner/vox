@@ -531,9 +531,8 @@ fn transcribe_with_input_path(
                     &wav_path,
                     parsed_model.id(),
                     language.as_deref(),
-                    temp_dir,
                 ) {
-                    Ok(transcript) => return Ok(gpu_result(transcript, parsed_model)),
+                    Ok(answer) => return Ok(gpu_result(answer, parsed_model)),
                     Err(reason) => Some(reason),
                 },
             };
@@ -711,9 +710,10 @@ fn build_result(
 /// A whisper.cpp-engine result transcribed by native-whisperx on the GPU. The model is the same
 /// Whisper checkpoint (native-whisperx loads its safetensors), so the engine and model ids stay.
 fn gpu_result(
-    transcript: crate::native_whisperx::GpuTranscript,
+    answer: crate::native_whisperx::ServeAnswer,
     model: WhisperCppModel,
 ) -> TranscribeAudioResult {
+    let transcript = answer.transcript;
     TranscribeAudioResult {
         text: Some(transcript.text),
         language: transcript.language,
@@ -732,7 +732,12 @@ fn gpu_result(
         model: model.id().to_string(),
         compute: Some(TranscriptionCompute {
             backend: ComputeBackend::NativeWhisperx,
-            device: ComputeDevice::Cuda,
+            // The device native-whisperx reports in its provenance (`cuda:0`).
+            device: if answer.device.starts_with("cuda") {
+                ComputeDevice::Cuda
+            } else {
+                ComputeDevice::Cpu
+            },
             gpu_unavailable_reason: None,
         }),
         capture_metrics: None,
