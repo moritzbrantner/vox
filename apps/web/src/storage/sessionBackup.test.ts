@@ -151,6 +151,55 @@ describe("session backup", () => {
     );
   });
 
+  test("keeps per-participant confirmations and migrates a single legacy one", () => {
+    const recording = {
+      sessionId: "session-1",
+      runId: "run-1",
+      origin: "browser",
+      role: "appInput",
+      sampleRate: 48_000,
+      channelCount: 1,
+      startOffsetSeconds: 0,
+      preprocessing: { echoCancellation: {}, noiseSuppression: {}, autoGainControl: {} },
+      discontinuities: [],
+      speakerAssessment: "unknown",
+    };
+    const participants = [
+      {
+        label: "Robin",
+        confirmedAt: "2026-10-31T10:00:00.000Z",
+        statement: "Robin has agreed to be recorded.",
+      },
+    ];
+    const withList = {
+      ...session,
+      recordings: [{ ...recording, otherParticipants: participants }],
+    };
+    const [restored] = parseSessionBackup(
+      JSON.parse(JSON.stringify(createSessionBackup(parseSessionBackup({ sessions: [withList] })))),
+    );
+    expect(restored.recordings[0]!.otherParticipants).toEqual(participants);
+
+    const legacy = {
+      confirmedAt: "2026-10-30T09:00:00.000Z",
+      statement: "Everyone else in this recording has agreed to be recorded.",
+    };
+    const [migrated] = parseSessionBackup({
+      sessions: [{ ...session, recordings: [{ ...recording, otherParticipants: legacy }] }],
+    });
+    expect(migrated.recordings[0]!.otherParticipants).toEqual([
+      { label: "Everyone else (before per-participant consent)", ...legacy },
+    ]);
+
+    for (const broken of [[], [{ ...participants[0], label: "" }], { confirmedAt: "never" }]) {
+      expect(() =>
+        parseSessionBackup({
+          sessions: [{ ...session, recordings: [{ ...recording, otherParticipants: broken }] }],
+        }),
+      ).toThrow("Backup session 1 is invalid.");
+    }
+  });
+
   test("rejects recordings from another session and repeated run ids", () => {
     const rerun = reanalyzeSession(
       session,

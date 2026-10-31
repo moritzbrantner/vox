@@ -54,7 +54,7 @@ type RecordingDeps = Pick<
 > &
   Pick<
     ReturnType<typeof useRecordingConsent>,
-    "soloSpeakerRef" | "othersRecorded" | "othersAgreed"
+    "soloSpeakerRef" | "othersRecorded" | "participants"
   > &
   Pick<
     ReturnType<typeof useSpeakerProfiles>,
@@ -119,7 +119,7 @@ export function useRecording({
   isRecordingRef,
   soloSpeakerRef,
   othersRecorded,
-  othersAgreed,
+  participants: declaredParticipants,
   setSpeakerMatch,
   speakersRef,
   speakerMatchRef,
@@ -163,8 +163,8 @@ export function useRecording({
     if (isRecording || isFinishingCapture || workspaceClaimPendingRef.current) {
       return;
     }
-    // A session that records other people does not start without this session's confirmation.
-    const participants = { othersRecorded, othersAgreed };
+    // A session that records other people starts only once each listed person is confirmed.
+    const participants = { othersRecorded, participants: declaredParticipants };
     if (!canStartWithParticipants(participants)) {
       setMessage(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
       return;

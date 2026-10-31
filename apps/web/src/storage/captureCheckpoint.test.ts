@@ -140,6 +140,45 @@ describe("capture checkpoints", () => {
     // A descriptor of another capture is not this capture's provenance.
     writeCaptureCheckpoint(checkpoint({ recording: { ...recording, sessionId: "other" } }));
     expect(readCaptureCheckpoint(key)).toEqual({ key, kind: "unreadable" });
+
+    // Crash recovery keeps each participant's confirmation and migrates a single legacy one.
+    const otherParticipants = [
+      {
+        label: "Robin",
+        confirmedAt: "2026-10-31T10:00:00.000Z",
+        statement: "Robin has agreed to be recorded.",
+      },
+    ];
+    writeCaptureCheckpoint(checkpoint({ recording: { ...recording, otherParticipants } }));
+    expect(readCaptureCheckpoint(key)).toEqual({
+      key,
+      kind: "checkpoint",
+      checkpoint: checkpoint({ recording: { ...recording, otherParticipants } }),
+    });
+    const legacyConfirmation = {
+      confirmedAt: "2026-10-30T09:00:00.000Z",
+      statement: "Everyone else in this recording has agreed to be recorded.",
+    };
+    localStorage.setItem(
+      key,
+      JSON.stringify(
+        checkpoint({
+          recording: { ...recording, otherParticipants: legacyConfirmation as never },
+        }),
+      ),
+    );
+    expect(readCaptureCheckpoint(key)).toEqual({
+      key,
+      kind: "checkpoint",
+      checkpoint: checkpoint({
+        recording: {
+          ...recording,
+          otherParticipants: [
+            { label: "Everyone else (before per-participant consent)", ...legacyConfirmation },
+          ],
+        },
+      }),
+    });
   });
 
   it("reports nothing when no checkpoint is stored", () => {

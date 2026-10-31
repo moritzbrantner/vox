@@ -153,80 +153,178 @@ function isValidScope(purpose: ConsentPurpose, scope: string) {
   }
 }
 
-// Recording other people (#66). Pressing Record covers recording the user alone, but a session
-// that knowingly records others starts only after the user confirms, for that session, that
-// everyone else recorded agreed. The confirmation is stored on that capture's descriptor, so it
-// belongs to one session and is never carried over to the next.
+// Recording other people (#66, #151). Pressing Record covers recording the user alone, but a
+// session that knowingly records others starts only after the user lists each other person and
+// confirms, one by one, that they agreed. The confirmations are stored on that capture's
+// descriptor, so they belong to one session and are never carried over to the next.
 
-/** The statement the user confirms; stored with the confirmation so the record says what was confirmed. */
-export const OTHER_PARTICIPANTS_STATEMENT =
-  "Everyone else in this recording has agreed to be recorded.";
-
-export type OtherParticipantsConfirmation = {
+/** One other person's recorded agreement, as stored with the capture. */
+export type ParticipantConfirmation = {
+  /** The short label or name the user gave this person. */
+  label: string;
+  /** When the user confirmed this person's agreement. */
   confirmedAt: string;
+  /** The statement the user confirmed, so the record says what was confirmed. */
   statement: string;
+};
+
+/** A person the user listed before recording; `confirmedAt` is null until confirmed. */
+export type DeclaredParticipant = {
+  id: string;
+  label: string;
+  confirmedAt: string | null;
 };
 
 /** What the user declared before pressing Record. */
 export type ParticipantsDeclaration = {
   /** The session will knowingly record people other than the user. */
   othersRecorded: boolean;
-  /** The user ticked the agreement confirmation for this session. */
-  othersAgreed: boolean;
+  /** Each other person, with their confirmation for this session. */
+  participants: readonly DeclaredParticipant[];
 };
 
+/** Label given to a confirmation saved before consent was per participant. */
+export const LEGACY_PARTICIPANTS_LABEL = "Everyone else (before per-participant consent)";
+
 export const OTHER_PARTICIPANTS_REQUIRED_MESSAGE =
-  "Confirm that everyone else in the recording has agreed before you start.";
+  "Add each other person and confirm they agreed before you start.";
 
-/** Whether recording may start under this declaration. */
-export function canStartWithParticipants(declaration: ParticipantsDeclaration) {
-  return !declaration.othersRecorded || declaration.othersAgreed;
+/** The statement the user confirms for one participant. */
+export function participantStatement(label: string) {
+  return `${label} has agreed to be recorded.`;
 }
 
-/**
- * The confirmation to store with a capture that is starting: null when only the user is recorded.
- * Throws when others are recorded without confirmation, so such a session cannot start.
- */
-export function participantsConfirmationForStart(
-  declaration: ParticipantsDeclaration,
+/** Appends an unconfirmed participant. Blank and already-listed labels are ignored. */
+export function addParticipant(
+  participants: readonly DeclaredParticipant[],
+  label: string,
+  id: string,
+): DeclaredParticipant[] {
+  const trimmed = label.trim();
+  const taken = participants.some(
+    (participant) => participant.label.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (!trimmed || taken) return [...participants];
+  return [...participants, { id, label: trimmed, confirmedAt: null }];
+}
+
+/** Confirms (with the time) or unconfirms one participant. */
+export function confirmParticipant(
+  participants: readonly DeclaredParticipant[],
+  id: string,
+  confirmed: boolean,
   at: Date = new Date(),
-): OtherParticipantsConfirmation | null {
-  if (!declaration.othersRecorded) return null;
-  if (!declaration.othersAgreed) throw new Error(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
-  return { confirmedAt: at.toISOString(), statement: OTHER_PARTICIPANTS_STATEMENT };
+): DeclaredParticipant[] {
+  return participants.map((participant) =>
+    participant.id === id
+      ? { ...participant, confirmedAt: confirmed ? at.toISOString() : null }
+      : participant,
+  );
 }
 
-/** The confirmation stored with a session's capture; null when it recorded no one else. */
-export function sessionParticipantsConfirmation(session: {
-  recordings: readonly { otherParticipants?: OtherParticipantsConfirmation }[];
-}): OtherParticipantsConfirmation | null {
+export function removeParticipant(
+  participants: readonly DeclaredParticipant[],
+  id: string,
+): DeclaredParticipant[] {
+  return participants.filter((participant) => participant.id !== id);
+}
+
+/** Recording may start once at least one other person is listed and every one is confirmed. */
+export function canStartWithParticipants(declaration: ParticipantsDeclaration) {
   return (
-    session.recordings.find((recording) => recording.otherParticipants)?.otherParticipants ?? null
+    !declaration.othersRecorded ||
+    (declaration.participants.length > 0 &&
+      declaration.participants.every((participant) => participant.confirmedAt !== null))
   );
 }
 
 /**
- * One line for review and export, e.g. "Other people recorded; their agreement confirmed …".
- * `confirmedAt` is null when the session declared no one else.
+ * The confirmations to store with a capture that is starting: null when only the user is
+ * recorded. Throws when anyone listed is unconfirmed, so such a session cannot start.
  */
-export function describeParticipants(
-  confirmedAt: string | null,
-  formatTime: (iso: string) => string = (iso) => iso,
-) {
-  return confirmedAt
-    ? `Other people recorded; their agreement confirmed ${formatTime(confirmedAt)}`
-    : "No other people declared";
+export function participantsConfirmationForStart(
+  declaration: ParticipantsDeclaration,
+): ParticipantConfirmation[] | null {
+  if (!declaration.othersRecorded) return null;
+  if (!canStartWithParticipants(declaration)) throw new Error(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
+  return declaration.participants.map((participant) => ({
+    label: participant.label,
+    confirmedAt: participant.confirmedAt!,
+    statement: participantStatement(participant.label),
+  }));
 }
 
-export function isOtherParticipantsConfirmation(
-  value: unknown,
-): value is OtherParticipantsConfirmation {
+/** The confirmations stored with a session's capture; null when it recorded no one else. */
+export function sessionParticipants(session: {
+  recordings: readonly { otherParticipants?: readonly ParticipantConfirmation[] }[];
+}): readonly ParticipantConfirmation[] | null {
+  return (
+    session.recordings.find((recording) => recording.otherParticipants?.length)
+      ?.otherParticipants ?? null
+  );
+}
+
+/**
+ * One line for review and export, e.g. "Other people recorded: Robin (agreed …), Sam (agreed …)".
+ * `participants` is null when the session declared no one else.
+ */
+export function describeParticipants(
+  participants: readonly { label: string; confirmedAt: string }[] | null,
+  formatTime: (iso: string) => string = (iso) => iso,
+) {
+  if (!participants?.length) return "No other people declared";
+  const each = participants.map(
+    (participant) => `${participant.label} (agreed ${formatTime(participant.confirmedAt)})`,
+  );
+  return `Other people recorded: ${each.join(", ")}`;
+}
+
+export function isParticipantConfirmation(value: unknown): value is ParticipantConfirmation {
+  return (
+    isLegacyConfirmation(value) &&
+    typeof (value as ParticipantConfirmation).label === "string" &&
+    (value as ParticipantConfirmation).label.trim().length > 0
+  );
+}
+
+/**
+ * Reads stored confirmations: a non-empty list, or the single confirmation saved before consent
+ * was per participant, which becomes one entry labelled `LEGACY_PARTICIPANTS_LABEL`. Null when
+ * malformed.
+ */
+export function parseOtherParticipants(value: unknown): ParticipantConfirmation[] | null {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every(isParticipantConfirmation) ? value : null;
+  }
+  if (!isLegacyConfirmation(value)) return null;
+  return [
+    {
+      label: LEGACY_PARTICIPANTS_LABEL,
+      confirmedAt: value.confirmedAt,
+      statement: value.statement,
+    },
+  ];
+}
+
+/** Lifts a stored descriptor's single legacy confirmation into the per-participant list. */
+export function migrateRecordingParticipants<T extends { otherParticipants?: unknown }>(
+  recording: T,
+): Omit<T, "otherParticipants"> & { otherParticipants?: ParticipantConfirmation[] } {
+  if (recording.otherParticipants === undefined || Array.isArray(recording.otherParticipants)) {
+    return recording as T & { otherParticipants?: ParticipantConfirmation[] };
+  }
+  const migrated = parseOtherParticipants(recording.otherParticipants);
+  if (!migrated) throw new Error("Stored participant confirmation is malformed.");
+  return { ...recording, otherParticipants: migrated };
+}
+
+function isLegacyConfirmation(value: unknown): value is { confirmedAt: string; statement: string } {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as OtherParticipantsConfirmation).confirmedAt === "string" &&
-    Number.isFinite(Date.parse((value as OtherParticipantsConfirmation).confirmedAt)) &&
-    typeof (value as OtherParticipantsConfirmation).statement === "string" &&
-    (value as OtherParticipantsConfirmation).statement.length > 0
+    typeof (value as ParticipantConfirmation).confirmedAt === "string" &&
+    Number.isFinite(Date.parse((value as ParticipantConfirmation).confirmedAt)) &&
+    typeof (value as ParticipantConfirmation).statement === "string" &&
+    (value as ParticipantConfirmation).statement.length > 0
   );
 }

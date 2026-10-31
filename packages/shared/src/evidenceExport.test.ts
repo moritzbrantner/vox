@@ -529,30 +529,55 @@ describe("review regressions", () => {
     expect(renderEvidenceReport(evidence)).not.toContain("\n  Human reference: forged");
   });
 
-  test("states whether each session recorded other people and when their agreement was confirmed", () => {
+  test("lists each other participant and when their agreement was confirmed", () => {
     const conversation = session("conversation", "2026-10-03T09:00:00.000Z", [
       ["Hi there", "me", "Robin"],
     ]);
-    conversation.recordings[0]!.otherParticipants = {
-      confirmedAt: "2026-10-03T08:59:00.000Z",
-      statement: "Everyone else in this recording has agreed to be recorded.",
-    };
-    const evidence = buildEvidenceExport([chosen, conversation], {
+    conversation.recordings[0]!.otherParticipants = [
+      {
+        label: "Robin",
+        confirmedAt: "2026-10-03T08:58:00.000Z",
+        statement: "Robin has agreed to be recorded.",
+      },
+      {
+        label: "Sam",
+        confirmedAt: "2026-10-03T08:59:00.000Z",
+        statement: "Sam has agreed to be recorded.",
+      },
+    ];
+    const options = {
       sessionIds: [chosen.id, conversation.id],
       includeTranscripts: false,
-      transcriptSpeakers: "all",
+      transcriptSpeakers: "all" as const,
       includeSpeakerNames: false,
       exportedAt,
-    });
+    };
+    const evidence = buildEvidenceExport([chosen, conversation], options);
     expect(evidence.sessions.map((item) => item.participants)).toEqual([
-      { othersRecorded: false, agreementConfirmedAt: null },
-      { othersRecorded: true, agreementConfirmedAt: "2026-10-03T08:59:00.000Z" },
+      { othersRecorded: false, confirmations: [] },
+      {
+        othersRecorded: true,
+        confirmations: [
+          { label: "Participant 1", confirmedAt: "2026-10-03T08:58:00.000Z" },
+          { label: "Participant 2", confirmedAt: "2026-10-03T08:59:00.000Z" },
+        ],
+      },
     ]);
     const report = renderEvidenceReport(evidence);
     expect(report).toContain("  Participants: No other people declared");
     expect(report).toContain(
-      "  Participants: Other people recorded; their agreement confirmed 2026-10-03T08:59:00.000Z",
+      "  Participants: Other people recorded: Participant 1 (agreed 2026-10-03T08:58:00.000Z), Participant 2 (agreed 2026-10-03T08:59:00.000Z)",
     );
+
+    const named = buildEvidenceExport([chosen, conversation], {
+      ...options,
+      includeTranscripts: true,
+      includeSpeakerNames: true,
+    });
+    expect(named.sessions[1]!.participants.confirmations.map((item) => item.label)).toEqual([
+      "Robin",
+      "Sam",
+    ]);
   });
 });
 

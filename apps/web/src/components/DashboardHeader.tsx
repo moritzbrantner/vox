@@ -1,15 +1,24 @@
 import type { ProcessingDestination } from "@stutter-tracker/compute-client";
 import {
   canStartWithParticipants,
+  type DeclaredParticipant,
   describeCompute,
   OTHER_PARTICIPANTS_REQUIRED_MESSAGE,
-  OTHER_PARTICIPANTS_STATEMENT,
+  participantStatement,
   type TranscriptCompute,
   type TranscriptionDevicePreference,
 } from "@stutter-tracker/shared";
-import { Mic, MicOff } from "lucide-react";
+import { Mic, MicOff, X } from "lucide-react";
+import { useState } from "react";
 import type { TranscriptionEngine, TranscriptionEngineId, TranscriptionSettings } from "../types";
-import { controlClass, cx, dangerButtonClass, eyebrowClass, primaryButtonClass } from "./styles";
+import {
+  buttonClass,
+  controlClass,
+  cx,
+  dangerButtonClass,
+  eyebrowClass,
+  primaryButtonClass,
+} from "./styles";
 
 type DashboardHeaderProps = {
   engines: TranscriptionEngine[];
@@ -33,12 +42,14 @@ type DashboardHeaderProps = {
   /** Declared before recording; fixed for the capture it starts. */
   soloSpeaker: boolean;
   onSoloSpeakerChange: (declared: boolean) => void;
-  /** The next session will record other people; it then needs `othersAgreed` to start. */
+  /** The next session will record other people; each listed person must then be confirmed. */
   othersRecorded: boolean;
   onOthersRecordedChange: (declared: boolean) => void;
-  /** This session's confirmation that everyone else agreed; cleared when a recording ends. */
-  othersAgreed: boolean;
-  onOthersAgreedChange: (agreed: boolean) => void;
+  /** The other people listed for this session; cleared when a recording ends. */
+  participants: readonly DeclaredParticipant[];
+  onParticipantAdd: (label: string) => void;
+  onParticipantConfirm: (id: string, confirmed: boolean) => void;
+  onParticipantRemove: (id: string) => void;
 };
 
 export function DashboardHeader({
@@ -62,12 +73,14 @@ export function DashboardHeader({
   onSoloSpeakerChange,
   othersRecorded,
   onOthersRecordedChange,
-  othersAgreed,
-  onOthersAgreedChange,
+  participants,
+  onParticipantAdd,
+  onParticipantConfirm,
+  onParticipantRemove,
 }: DashboardHeaderProps) {
   const whisperCpp = transcription.engine === "whisperCpp";
   const needsAgreement =
-    !isRecording && !canStartWithParticipants({ othersRecorded, othersAgreed });
+    !isRecording && !canStartWithParticipants({ othersRecorded, participants });
   return (
     <section className="mb-4 flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
       <div>
@@ -170,15 +183,13 @@ export function DashboardHeader({
           Recording other people
         </label>
         {othersRecorded && (
-          <label className="flex items-center gap-2 text-sm text-[#2d4e43]">
-            <input
-              type="checkbox"
-              checked={othersAgreed}
-              disabled={isRecording}
-              onChange={(event) => onOthersAgreedChange(event.target.checked)}
-            />
-            {OTHER_PARTICIPANTS_STATEMENT}
-          </label>
+          <ParticipantsList
+            participants={participants}
+            disabled={isRecording}
+            onAdd={onParticipantAdd}
+            onConfirm={onParticipantConfirm}
+            onRemove={onParticipantRemove}
+          />
         )}
         <button
           className={cx(isRecording ? dangerButtonClass : primaryButtonClass)}
@@ -231,5 +242,73 @@ function ProcessingDestinationNotice({
         </label>
       ) : null}
     </div>
+  );
+}
+
+/** Each other person in the next recording, confirmed one by one (#151). */
+function ParticipantsList({
+  participants,
+  disabled,
+  onAdd,
+  onConfirm,
+  onRemove,
+}: {
+  participants: readonly DeclaredParticipant[];
+  disabled: boolean;
+  onAdd: (label: string) => void;
+  onConfirm: (id: string, confirmed: boolean) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const add = () => {
+    onAdd(label);
+    setLabel("");
+  };
+  return (
+    <fieldset
+      className="flex flex-col gap-1 text-sm text-[#2d4e43]"
+      aria-label="Other participants"
+    >
+      {participants.map((participant) => (
+        <div key={participant.id} className="flex items-center gap-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={participant.confirmedAt !== null}
+              disabled={disabled}
+              onChange={(event) => onConfirm(participant.id, event.target.checked)}
+            />
+            {participantStatement(participant.label)}
+          </label>
+          <button
+            type="button"
+            aria-label={`Remove ${participant.label}`}
+            disabled={disabled}
+            onClick={() => onRemove(participant.id)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          add();
+        }}
+      >
+        <input
+          className={controlClass}
+          aria-label="Other participant's name or label"
+          placeholder="Name or label"
+          value={label}
+          disabled={disabled}
+          onChange={(event) => setLabel(event.target.value)}
+        />
+        <button className={buttonClass} type="submit" disabled={disabled || !label.trim()}>
+          Add person
+        </button>
+      </form>
+    </fieldset>
   );
 }

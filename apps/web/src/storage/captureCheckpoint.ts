@@ -6,10 +6,11 @@
 // window holds a Web Lock named after the capture while it owns it; a checkpoint whose lock is held
 // belongs to a live window and is not offered for recovery elsewhere. Closing or crashing the window
 // releases the lock.
-import type {
-  AnalysisRunIdentity,
-  RecordingDescriptor,
-  TranscriptionModelIdentity,
+import {
+  type AnalysisRunIdentity,
+  migrateRecordingParticipants,
+  type RecordingDescriptor,
+  type TranscriptionModelIdentity,
 } from "@stutter-tracker/shared";
 import type { AnalysisReport, PauseSpan, TranscriptSegment } from "../types";
 import {
@@ -165,7 +166,9 @@ export function parseCaptureCheckpoint(value: unknown): CaptureCheckpoint | null
     segments: record.segments as TranscriptSegment[],
     pauses: record.pauses as PauseSpan[],
     analysis: record.analysis as CaptureCheckpoint["analysis"],
-    recording: (record.recording as RecordingDescriptor | undefined) ?? null,
+    recording: record.recording
+      ? migrateRecordingParticipants(record.recording as RecordingDescriptor)
+      : null,
     // Absent in older checkpoints (unknown); kept absent so they read back unchanged.
     ...(record.transcription === undefined
       ? {}
