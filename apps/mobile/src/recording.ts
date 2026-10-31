@@ -40,3 +40,21 @@ export function mobileErrorMessage(error: unknown) {
   }
   return message;
 }
+
+/**
+ * Removes a recording from the app's cache once it was uploaded or cancelled, so raw speech does
+ * not stay on the device (vox#85). The mobile app keeps no other local copy of a session.
+ */
+export function discardRecordingFile(
+  uri: string | null | undefined,
+  remove: (uri: string) => void,
+) {
+  if (!uri) return false;
+  try {
+    remove(uri);
+    return true;
+  } catch {
+    // Already gone, or the OS clears the cache directory later.
+    return false;
+  }
+}

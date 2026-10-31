@@ -11,6 +11,7 @@ import { LowerDashboard } from "../components/LowerDashboard";
 import { RecordingWorkspace } from "../components/RecordingWorkspace";
 import { SessionComparisonPanel } from "../components/SessionComparisonPanel";
 import { StatusMetrics } from "../components/StatusMetrics";
+import { StorageProtectionNotice } from "../components/StorageProtectionNotice";
 import { TranscriptRevisionsPanel } from "../components/TranscriptRevisionsPanel";
 import { ValidationPanel } from "../components/ValidationPanel";
 import { buttonClass } from "../components/styles";
@@ -489,6 +490,8 @@ export function App() {
         othersAgreed={othersAgreed}
         onOthersAgreedChange={setOthersAgreed}
       />
+
+      <StorageProtectionNotice />
 
       <StatusMetrics report={report} speechStats={speechStats} blockerStats={blockerStats} />
 

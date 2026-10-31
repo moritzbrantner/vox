@@ -1,3 +1,4 @@
+import { appStorage } from "../../storage/protectedStorage";
 import { isAnalysisVerified } from "@stutter-tracker/shared";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -122,7 +123,7 @@ export function useSessionLibrary({ isNative }: SessionLibraryDeps) {
 
   // Writes storage first, so a failed write (quota, blocked storage) leaves memory unchanged.
   function persistSessions(next: SavedSession[]) {
-    localStorage.setItem(STORE_KEY, JSON.stringify(next));
+    appStorage().setItem(STORE_KEY, JSON.stringify(next));
     sessionsRef.current = next;
     setSessions(next);
   }

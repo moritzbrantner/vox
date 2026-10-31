@@ -1,3 +1,4 @@
+import { appStorage } from "../../storage/protectedStorage";
 import {
   type ModelPreparationFailure,
   type TranscriptionDevicePreference,
@@ -88,7 +89,7 @@ export function useTranscriptionModels({
           return current;
         }
         const next = { ...current, model };
-        localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+        appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
         return next;
       });
       setMessage(`${model} ready`);
@@ -177,19 +178,19 @@ export function useTranscriptionModels({
       model: nextEngine.models[0],
     };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   function updateTranscriptionModel(model: string) {
     const next = { ...transcription, model };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   function updateTranscriptionDevice(device: TranscriptionDevicePreference) {
     const next = { ...transcription, device };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   async function fetchModelStatuses() {

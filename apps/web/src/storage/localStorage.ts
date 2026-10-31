@@ -14,6 +14,7 @@ import type {
   Voiceprint,
 } from "../types";
 import { parseStoredSession } from "./sessionBackup";
+import { appStorage } from "./protectedStorage";
 
 export const STORE_KEY = "stutter-tracker:sessions";
 /** Stored sessions this build cannot read; kept so a later save does not drop them. */
@@ -28,7 +29,7 @@ export const CONSENT_LEDGER_KEY = "stutter-tracker:consent-ledger";
 export const UNREADABLE_CONSENT_LEDGER_KEY = "stutter-tracker:consent-ledger:unreadable";
 
 /** Loads the consent ledger, folding in a legacy remote-analysis grant once. */
-export function loadConsentLedger(storage: Storage = localStorage): ConsentLedger {
+export function loadConsentLedger(storage: Storage = appStorage()): ConsentLedger {
   let ledger: ConsentLedger | null;
   const raw = storage.getItem(CONSENT_LEDGER_KEY);
   try {
@@ -79,7 +80,7 @@ export function loadConsentLedger(storage: Storage = localStorage): ConsentLedge
 
 export function recordConsentDecision(
   decision: Parameters<typeof recordConsent>[1],
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ) {
   const ledger = recordConsent(loadConsentLedger(storage), decision);
   storage.setItem(CONSENT_LEDGER_KEY, JSON.stringify(ledger));
@@ -87,7 +88,7 @@ export function recordConsentDecision(
 }
 
 /** Remote-analysis consent is bound to one server URL; another URL needs consent again. */
-export function loadRemoteConsent(serverUrl: string, storage: Storage = localStorage) {
+export function loadRemoteConsent(serverUrl: string, storage: Storage = appStorage()) {
   try {
     return (
       Boolean(serverUrl) && hasConsent(loadConsentLedger(storage), "remoteAnalysis", serverUrl)
@@ -100,7 +101,7 @@ export function loadRemoteConsent(serverUrl: string, storage: Storage = localSto
 export function saveRemoteConsent(
   serverUrl: string,
   granted: boolean,
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ) {
   let ledger = loadConsentLedger(storage);
   if (granted) {
@@ -128,7 +129,7 @@ export function saveRemoteConsent(
  * cannot read are kept under UNREADABLE_SESSIONS_KEY and retried on every load, so a later build
  * that can read them restores them.
  */
-export function loadSessionsFromStorage(storage: Storage = localStorage): SavedSession[] {
+export function loadSessionsFromStorage(storage: Storage = appStorage()): SavedSession[] {
   const quarantined = readJsonArray(storage, UNREADABLE_SESSIONS_KEY);
   const sessions: SavedSession[] = [];
   const ids = new Set<string>();
@@ -206,16 +207,16 @@ function dedupe(entries: unknown[]) {
 }
 
 /** A restore replaces everything, including quarantined entries it was meant to remove. */
-export function replaceStoredSessions(sessions: SavedSession[], storage: Storage = localStorage) {
+export function replaceStoredSessions(sessions: SavedSession[], storage: Storage = appStorage()) {
   storage.setItem(STORE_KEY, JSON.stringify(sessions));
   storage.removeItem(UNREADABLE_SESSIONS_KEY);
 }
 
-export function saveSessionsToStorage(sessions: SavedSession[], storage: Storage = localStorage) {
+export function saveSessionsToStorage(sessions: SavedSession[], storage: Storage = appStorage()) {
   storage.setItem(STORE_KEY, JSON.stringify(sessions));
 }
 
-export function loadSpeakerProfilesFromStorage(storage: Storage = localStorage): SpeakerProfile[] {
+export function loadSpeakerProfilesFromStorage(storage: Storage = appStorage()): SpeakerProfile[] {
   try {
     const speakers = JSON.parse(storage.getItem(SPEAKERS_KEY) ?? "[]") as SpeakerProfile[];
     if (Array.isArray(speakers) && speakers.length > 0) {
@@ -241,7 +242,7 @@ export function loadSpeakerProfilesFromStorage(storage: Storage = localStorage):
 
 export function saveSpeakerProfilesToStorage(
   speakers: SpeakerProfile[],
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ) {
   const normalized = normalizeSpeakerProfiles(speakers);
   storage.setItem(SPEAKERS_KEY, JSON.stringify(normalized));
@@ -250,7 +251,7 @@ export function saveSpeakerProfilesToStorage(
 
 export function loadTranscriptionSettingsFromStorage(
   engines: TranscriptionEngine[],
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ): TranscriptionSettings {
   try {
     const parsed = JSON.parse(
@@ -268,13 +269,13 @@ export function loadTranscriptionSettingsFromStorage(
 
 export function saveTranscriptionSettingsToStorage(
   settings: TranscriptionSettings,
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ) {
   storage.setItem(TRANSCRIPTION_KEY, JSON.stringify(settings));
 }
 
 /** The user's standing "only I speak in my recordings" declaration; unset means not declared. */
-export function loadSoloSpeakerDeclaration(storage: Storage = localStorage): boolean {
+export function loadSoloSpeakerDeclaration(storage: Storage = appStorage()): boolean {
   try {
     return storage.getItem(SOLO_SPEAKER_KEY) === "true";
   } catch {
@@ -282,7 +283,7 @@ export function loadSoloSpeakerDeclaration(storage: Storage = localStorage): boo
   }
 }
 
-export function saveSoloSpeakerDeclaration(declared: boolean, storage: Storage = localStorage) {
+export function saveSoloSpeakerDeclaration(declared: boolean, storage: Storage = appStorage()) {
   try {
     if (declared) storage.setItem(SOLO_SPEAKER_KEY, "true");
     else storage.removeItem(SOLO_SPEAKER_KEY);

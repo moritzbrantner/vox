@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mobileErrorMessage, recordingFileInfo, transcriptionToAnalysisRequest } from "./recording";
+import {
+  discardRecordingFile,
+  mobileErrorMessage,
+  recordingFileInfo,
+  transcriptionToAnalysisRequest,
+} from "./recording";
 
 describe("mobile recording helpers", () => {
   it("infers upload filename and MIME type from recording URI", () => {
@@ -38,5 +43,20 @@ describe("mobile recording helpers", () => {
     expect(mobileErrorMessage(new Error("server_busy: retry later"))).toBe(
       "Compute server is busy; try again shortly",
     );
+  });
+});
+
+describe("recording file cleanup", () => {
+  it("removes the cached recording and tolerates one that is already gone", () => {
+    const removed: string[] = [];
+    expect(discardRecordingFile("file:///cache/a.m4a", (uri) => removed.push(uri))).toBe(true);
+    expect(removed).toEqual(["file:///cache/a.m4a"]);
+    expect(
+      discardRecordingFile("file:///cache/b.m4a", () => {
+        throw new Error("missing");
+      }),
+    ).toBe(false);
+    expect(discardRecordingFile(null, () => removed.push("never"))).toBe(false);
+    expect(removed).toHaveLength(1);
   });
 });

@@ -1,3 +1,4 @@
+import { appStorage } from "../storage/protectedStorage";
 // Voiceprints: enrollment and identification calls, and where profiles are stored.
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -99,7 +100,7 @@ function decimate(samples: number[]) {
 }
 
 export function removeLocalSpeakerCopy(id: string) {
-  const raw = localStorage.getItem(SPEAKERS_KEY);
+  const raw = appStorage().getItem(SPEAKERS_KEY);
   let stored: unknown;
   try {
     stored = JSON.parse(raw ?? "[]");
@@ -122,12 +123,12 @@ export function removeLocalSpeakerCopy(id: string) {
         ),
     );
     if (kept.length !== stored.length) {
-      localStorage.setItem(SPEAKERS_KEY, JSON.stringify(kept));
+      appStorage().setItem(SPEAKERS_KEY, JSON.stringify(kept));
     }
   }
   // The pre-profile key belongs only to this profile. Absent copies need no write.
-  if (id === "legacy-speaker" && localStorage.getItem(VOICE_KEY) !== null) {
-    localStorage.removeItem(VOICE_KEY);
+  if (id === "legacy-speaker" && appStorage().getItem(VOICE_KEY) !== null) {
+    appStorage().removeItem(VOICE_KEY);
   }
 }
 
@@ -178,24 +179,24 @@ export async function savePersistedSpeakerProfiles(
   }
   if (computeClient.destination.kind !== "server") {
     // No permitted server: voiceprints stay in this browser.
-    localStorage.setItem(SPEAKERS_KEY, JSON.stringify(normalized));
+    appStorage().setItem(SPEAKERS_KEY, JSON.stringify(normalized));
     return normalized;
   }
   try {
     return await computeClient.saveSpeakerProfiles(normalized);
   } catch {
-    localStorage.setItem(SPEAKERS_KEY, JSON.stringify(normalized));
+    appStorage().setItem(SPEAKERS_KEY, JSON.stringify(normalized));
     return normalized;
   }
 }
 
 export function loadSpeakerProfiles(): SpeakerProfile[] {
   try {
-    const speakers = JSON.parse(localStorage.getItem(SPEAKERS_KEY) ?? "[]") as SpeakerProfile[];
+    const speakers = JSON.parse(appStorage().getItem(SPEAKERS_KEY) ?? "[]") as SpeakerProfile[];
     if (Array.isArray(speakers) && speakers.length > 0) {
       return normalizeSpeakerProfiles(speakers);
     }
-    const legacy = JSON.parse(localStorage.getItem(VOICE_KEY) ?? "null") as Voiceprint | null;
+    const legacy = JSON.parse(appStorage().getItem(VOICE_KEY) ?? "null") as Voiceprint | null;
     if (legacy?.embedding?.length) {
       return [
         {

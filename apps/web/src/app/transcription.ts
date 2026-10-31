@@ -1,3 +1,4 @@
+import { appStorage } from "../storage/protectedStorage";
 // Transcription calls, chunk bookkeeping and the stored engine settings.
 import {
   type TranscriptCompute,
@@ -141,7 +142,7 @@ export function emptyChunkStats(): TranscriptionChunkStats {
 export function loadTranscriptionSettings(): TranscriptionSettings {
   try {
     const parsed = JSON.parse(
-      localStorage.getItem(TRANSCRIPTION_KEY) ?? "null",
+      appStorage().getItem(TRANSCRIPTION_KEY) ?? "null",
     ) as Partial<TranscriptionSettings> | null;
     const fallback = defaultTranscriptionSettings();
     const engine =

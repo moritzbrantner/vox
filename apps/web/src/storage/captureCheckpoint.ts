@@ -21,6 +21,7 @@ import {
   isTranscriptSegment,
   isValidDateString,
 } from "./sessionBackup";
+import { appStorage } from "./protectedStorage";
 
 export const CAPTURE_CHECKPOINT_PREFIX = "stutter-tracker:capture-checkpoint:";
 export const CAPTURE_CHECKPOINT_VERSION = 1;
@@ -61,7 +62,7 @@ export function captureCheckpointKey(id: string) {
 }
 
 /** Every stored checkpoint, oldest first. Storage that cannot be read yields none. */
-export function listCaptureCheckpoints(storage: Storage = localStorage): InterruptedCapture[] {
+export function listCaptureCheckpoints(storage: Storage = appStorage()): InterruptedCapture[] {
   const found: InterruptedCapture[] = [];
   try {
     for (let index = 0; index < storage.length; index += 1) {
@@ -90,7 +91,7 @@ export function listCaptureCheckpoints(storage: Storage = localStorage): Interru
 /** The checkpoint stored under `key` now; null when there is none. */
 export function readCaptureCheckpoint(
   key: string,
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ): InterruptedCapture | null | "unavailable" {
   let raw: string | null;
   try {
@@ -200,13 +201,13 @@ export function hasCheckpointedObservation(
  */
 export function writeCaptureCheckpoint(
   checkpoint: CaptureCheckpoint,
-  storage: Storage = localStorage,
+  storage: Storage = appStorage(),
 ) {
   storage.setItem(captureCheckpointKey(checkpoint.id), JSON.stringify(checkpoint));
 }
 
 /** Removes one stored checkpoint by key. Returns false when storage refused the removal. */
-export function removeCaptureCheckpoint(key: string, storage: Storage = localStorage) {
+export function removeCaptureCheckpoint(key: string, storage: Storage = appStorage()) {
   try {
     storage.removeItem(key);
     return true;

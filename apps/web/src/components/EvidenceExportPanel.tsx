@@ -12,6 +12,7 @@ import {
   loadConsentLedger,
   recordConsentDecision,
 } from "../storage/localStorage";
+import { appStorage } from "../storage/protectedStorage";
 import type { SavedSession } from "../types";
 import { buttonClass, mutedTextClass, panelClass } from "./styles";
 
@@ -176,7 +177,7 @@ export function EvidenceExportPanel({ sessions }: { sessions: SavedSession[] }) 
                   } catch {
                     if (!granted) {
                       try {
-                        localStorage.removeItem(CONSENT_LEDGER_KEY);
+                        appStorage().removeItem(CONSENT_LEDGER_KEY);
                       } catch {
                         /* Storage unavailable. */
                       }

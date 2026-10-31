@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { initializeAppStorage, resetAppStorage } from "./storage/protectedStorage";
 import type { SavedSession, SpeechCorpusAnalysis } from "./types";
 
 const STORE_KEY = "stutter-tracker:sessions";
@@ -275,5 +276,71 @@ describe("desktop saved-session persistence", () => {
     });
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
     expect(screen.queryByText("alpha deleted")).not.toBeInTheDocument();
+  });
+});
+
+describe("desktop protected storage", () => {
+  afterEach(() => resetAppStorage());
+
+  it("moves plain sessions in, shows them, discloses the protection and writes changes through", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    const protectedEntries = new Map<string, string>();
+    const deletion = deferred<SpeechCorpusAnalysis>();
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as Record<string, unknown> | undefined;
+      switch (command) {
+        case "protected_storage_open":
+          return { status: "protected", mechanism: "Test Keychain", migrated: false, entries: {} };
+        case "protected_storage_migrate":
+          for (const [key, value] of Object.entries(params?.entries as Record<string, string>)) {
+            protectedEntries.set(key, value);
+          }
+          return null;
+        case "protected_storage_set":
+          protectedEntries.set(params?.key as string, params?.value as string);
+          return null;
+        case "protected_storage_remove":
+          protectedEntries.delete(params?.key as string);
+          return null;
+        case "protected_audio_get":
+          return new ArrayBuffer(0);
+        case "protected_audio_delete":
+        case "protected_audio_retain":
+          return null;
+        case "delete_speech_corpus_session":
+          return deletion.promise;
+        default:
+          throw new Error(`Tauri invoke unavailable for ${command}`);
+      }
+    });
+    localStorage.setItem(
+      STORE_KEY,
+      JSON.stringify([
+        makeSession("session-a", "alpha", "2026-05-19T10:00:00.000Z"),
+        makeSession("session-b", "beta", "2026-05-19T11:00:00.000Z"),
+      ]),
+    );
+
+    expect((await initializeAppStorage()).kind).toBe("protected");
+    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp();
+
+    expect(await screen.findByText("Local data is encrypted on this device")).toBeInTheDocument();
+    expect(screen.getByText(/key held in the Test Keychain/)).toBeInTheDocument();
+    await userEvent.click((await screen.findAllByTitle("Delete saved session"))[0]);
+    await waitFor(() => expect(deleteInvocationCount()).toBe(1));
+    deletion.resolve(emptyCorpusAnalysis());
+
+    await waitFor(() => {
+      const persisted = JSON.parse(protectedEntries.get(STORE_KEY) ?? "[]") as SavedSession[];
+      expect(persisted).toHaveLength(1);
+    });
+    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+  });
+
+  it("tells a browser user that local data is not encrypted", async () => {
+    renderApp();
+    expect(await screen.findByText("Local data is not encrypted in a browser")).toBeInTheDocument();
   });
 });
