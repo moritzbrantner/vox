@@ -139,6 +139,10 @@ pub struct HypothesisItem {
     pub audio_seconds: f64,
     pub wall_seconds: f64,
     pub segments: Vec<HypothesisSegment>,
+    /// Why the engine produced no transcript for this recording. A failed item keeps no segments,
+    /// so it is scored as all deletions rather than silently left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -681,6 +685,8 @@ pub struct RunSummary {
     pub model_bytes: Option<u64>,
     pub peak_rss_bytes: Option<u64>,
     pub real_time_factor: Option<f64>,
+    /// Recordings the engine failed on (scored as all deletions).
+    pub failed_items: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -821,6 +827,12 @@ fn run_summary(run: &HypothesisRun) -> RunSummary {
         model_bytes: run.model_bytes,
         peak_rss_bytes: run.peak_rss_bytes,
         real_time_factor: (audio > 0.0).then(|| round4(wall / audio)),
+        failed_items: run
+            .items
+            .iter()
+            .filter(|item| item.error.is_some())
+            .map(|item| format!("{}/{}", item.subset, item.item))
+            .collect(),
     }
 }
 

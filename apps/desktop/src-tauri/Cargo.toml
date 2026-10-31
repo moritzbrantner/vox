@@ -50,6 +50,9 @@ text-transcripts = { package = "moenarch-text-transcripts", version = "=0.1.3" }
 thiserror = "2"
 ureq = "2"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 
