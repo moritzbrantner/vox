@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { hashKey, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { isScoreWithheld } from "../../audio/captureQuality";
 import { fallbackPredictSpeakerIntent, predictSpeakerIntentWithFallback } from "../speakerIntent";
@@ -32,8 +32,14 @@ export function useIntentPredictions({
     }),
     [segments, sessions, report, transcript, interimText],
   );
+  // The key holds every saved session; see the same hash in useLiveAnalysis.
+  const intentQueryHash = useMemo(
+    () => hashKey(["intent-predictions", intentPredictionRequest]),
+    [intentPredictionRequest],
+  );
   const intentPredictionsQuery = useQuery({
     queryKey: ["intent-predictions", intentPredictionRequest],
+    queryHash: intentQueryHash,
     queryFn: () => predictSpeakerIntentWithFallback(intentPredictionRequest),
     staleTime: 1_000,
   });

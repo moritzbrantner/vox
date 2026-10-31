@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { hashKey, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { withCaptureQuality } from "../../audio/captureQuality";
 import { analysisAudioPayload, analyzeWithFallback } from "../analysis";
@@ -63,9 +63,9 @@ export function useLiveAnalysis({
     [analysisRequest],
   );
 
-  const analysisQuery = useQuery({
+  const analysisQueryKey = useMemo(
     // Gaps are appended to the descriptor during capture; a new gap must re-gate the report.
-    queryKey: [
+    () => [
       "analysis",
       analysisRequest,
       analysisDescriptor?.runId ?? null,
@@ -73,6 +73,20 @@ export function useLiveAnalysis({
       // The same analyzed tail of a longer capture covers a different share of it.
       analysisCaptureSeconds,
     ],
+    [
+      analysisRequest,
+      analysisDescriptor?.runId,
+      analysisDescriptor?.discontinuities.length,
+      analysisCaptureSeconds,
+    ],
+  );
+  // The key holds up to 90 s of samples and the app renders on every audio frame, so its default
+  // hash (the same function) is computed once per key instead of several times per render.
+  const analysisQueryHash = useMemo(() => hashKey(analysisQueryKey), [analysisQueryKey]);
+
+  const analysisQuery = useQuery({
+    queryKey: analysisQueryKey,
+    queryHash: analysisQueryHash,
     queryFn: async () => {
       const analysis = await analyzeWithFallback(analysisRequest);
       return {
