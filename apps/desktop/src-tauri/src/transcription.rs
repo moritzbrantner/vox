@@ -800,7 +800,12 @@ fn temp_transcription_dir() -> Result<PathBuf> {
             "stutter-tracker-transcription-{}-{nanos}-{counter}-{attempt}",
             std::process::id()
         ));
-        match fs::create_dir(&dir) {
+        // The capture WAV written here is raw speech: on Unix only this user may open the
+        // directory (vox#85). Windows and macOS temp directories are already per user.
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        match builder.create(&dir) {
             Ok(()) => return Ok(dir),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error.into()),
@@ -923,6 +928,16 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.is_dir());
         assert!(second.is_dir());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&first).unwrap().permissions().mode();
+            assert_eq!(
+                mode & 0o777,
+                0o700,
+                "capture audio must not be readable by others"
+            );
+        }
 
         let _ = fs::remove_dir_all(first);
         let _ = fs::remove_dir_all(second);

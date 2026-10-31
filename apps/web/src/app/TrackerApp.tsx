@@ -85,6 +85,7 @@ import { LowerDashboard } from "../components/LowerDashboard";
 import { RecordingWorkspace } from "../components/RecordingWorkspace";
 import { TranscriptRevisionsPanel } from "../components/TranscriptRevisionsPanel";
 import { StatusMetrics } from "../components/StatusMetrics";
+import { StorageProtectionNotice } from "../components/StorageProtectionNotice";
 import {
   BrowserRecorderError,
   createBrowserRecorder,
@@ -122,6 +123,7 @@ import {
   saveRemoteConsent,
   saveSoloSpeakerDeclaration,
 } from "../storage/localStorage";
+import { appStorage } from "../storage/protectedStorage";
 import {
   CAPTURE_CHECKPOINT_PREFIX,
   type CaptureCheckpoint,
@@ -523,7 +525,7 @@ export function App() {
           return current;
         }
         const next = { ...current, model };
-        localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+        appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
         return next;
       });
       setMessage(`${model} ready`);
@@ -1318,7 +1320,7 @@ export function App() {
 
   // Writes storage first, so a failed write (quota, blocked storage) leaves memory unchanged.
   function persistSessions(next: SavedSession[]) {
-    localStorage.setItem(STORE_KEY, JSON.stringify(next));
+    appStorage().setItem(STORE_KEY, JSON.stringify(next));
     sessionsRef.current = next;
     setSessions(next);
   }
@@ -2608,19 +2610,19 @@ export function App() {
       model: nextEngine.models[0],
     };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   function updateTranscriptionModel(model: string) {
     const next = { ...transcription, model };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   function updateTranscriptionDevice(device: TranscriptionDevicePreference) {
     const next = { ...transcription, device };
     setTranscription(next);
-    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+    appStorage().setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
 
   async function fetchModelStatuses() {
@@ -2916,6 +2918,8 @@ export function App() {
         othersAgreed={othersAgreed}
         onOthersAgreedChange={setOthersAgreed}
       />
+
+      <StorageProtectionNotice />
 
       <StatusMetrics report={report} speechStats={speechStats} blockerStats={blockerStats} />
 
@@ -4006,7 +4010,7 @@ function emptyChunkStats(): TranscriptionChunkStats {
 }
 
 function removeLocalSpeakerCopy(id: string) {
-  const raw = localStorage.getItem(SPEAKERS_KEY);
+  const raw = appStorage().getItem(SPEAKERS_KEY);
   let stored: unknown;
   try {
     stored = JSON.parse(raw ?? "[]");
@@ -4029,12 +4033,12 @@ function removeLocalSpeakerCopy(id: string) {
         ),
     );
     if (kept.length !== stored.length) {
-      localStorage.setItem(SPEAKERS_KEY, JSON.stringify(kept));
+      appStorage().setItem(SPEAKERS_KEY, JSON.stringify(kept));
     }
   }
   // The pre-profile key belongs only to this profile. Absent copies need no write.
-  if (id === "legacy-speaker" && localStorage.getItem(VOICE_KEY) !== null) {
-    localStorage.removeItem(VOICE_KEY);
+  if (id === "legacy-speaker" && appStorage().getItem(VOICE_KEY) !== null) {
+    appStorage().removeItem(VOICE_KEY);
   }
 }
 
@@ -4083,13 +4087,13 @@ async function savePersistedSpeakerProfiles(speakers: SpeakerProfile[]): Promise
   }
   if (computeClient.destination.kind !== "server") {
     // No permitted server: voiceprints stay in this browser.
-    localStorage.setItem(SPEAKERS_KEY, JSON.stringify(normalized));
+    appStorage().setItem(SPEAKERS_KEY, JSON.stringify(normalized));
     return normalized;
   }
   try {
     return await computeClient.saveSpeakerProfiles(normalized);
   } catch {
-    localStorage.setItem(SPEAKERS_KEY, JSON.stringify(normalized));
+    appStorage().setItem(SPEAKERS_KEY, JSON.stringify(normalized));
     return normalized;
   }
 }
@@ -4142,11 +4146,11 @@ function loadSessions(): SavedSession[] {
 
 function loadSpeakerProfiles(): SpeakerProfile[] {
   try {
-    const speakers = JSON.parse(localStorage.getItem(SPEAKERS_KEY) ?? "[]") as SpeakerProfile[];
+    const speakers = JSON.parse(appStorage().getItem(SPEAKERS_KEY) ?? "[]") as SpeakerProfile[];
     if (Array.isArray(speakers) && speakers.length > 0) {
       return normalizeSpeakerProfiles(speakers);
     }
-    const legacy = JSON.parse(localStorage.getItem(VOICE_KEY) ?? "null") as Voiceprint | null;
+    const legacy = JSON.parse(appStorage().getItem(VOICE_KEY) ?? "null") as Voiceprint | null;
     if (legacy?.embedding?.length) {
       return [
         {
@@ -4190,7 +4194,7 @@ function normalizeSpeakerProfiles(speakers: SpeakerProfile[]) {
 function loadTranscriptionSettings(): TranscriptionSettings {
   try {
     const parsed = JSON.parse(
-      localStorage.getItem(TRANSCRIPTION_KEY) ?? "null",
+      appStorage().getItem(TRANSCRIPTION_KEY) ?? "null",
     ) as Partial<TranscriptionSettings> | null;
     const fallback = defaultTranscriptionSettings();
     const engine =

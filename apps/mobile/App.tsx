@@ -36,6 +36,7 @@ import {
 } from "react-native";
 import {
   mobileErrorMessage,
+  discardRecordingFile,
   recordingFileInfo,
   transcriptionToAnalysisRequest,
 } from "./src/recording";
@@ -48,6 +49,9 @@ import {
 import { createRecordingController } from "./src/recorder";
 
 const RECORDING_PRESET = RecordingPresets.HIGH_QUALITY;
+
+/** Deletes one cached recording (expo-file-system; throws when it is already gone). */
+const deleteFile = (uri: string) => new File(uri).delete();
 
 const providers: Array<Exclude<TranscriptionEngineId, "browser">> = [
   "whisperCpp",
@@ -66,7 +70,6 @@ export default function App() {
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [transcript, setTranscript] = useState("");
   const [report, setReport] = useState<AnalysisReport | null>(null);
-  const [lastRecordingUri, setLastRecordingUri] = useState("");
   const [modelStatuses, setModelStatuses] = useState<TranscriptionModelStatus[]>([]);
   // "Only I speak": without it a result stays unknown, as on the web.
   const [soloSpeaker, setSoloSpeaker] = useState(false);
@@ -208,7 +211,6 @@ export default function App() {
       const captureSeconds = recorderState.durationMillis / 1000;
       const stopped = await recording.stop();
       if (!stopped) return;
-      setLastRecordingUri(stopped.uri);
       await uploadRecording(
         stopped.captureId,
         stopped.uri,
@@ -223,6 +225,7 @@ export default function App() {
 
   async function cancelRecording() {
     await recording.cancel();
+    if (!audioRecorder.isRecording) discardRecordingFile(audioRecorder.uri, deleteFile);
     setIsUploading(false);
     setStatus("Recording cancelled");
   }
@@ -269,6 +272,8 @@ export default function App() {
     } catch (error) {
       if (isCurrent()) setStatus(mobileErrorMessage(error));
     } finally {
+      // Nothing re-sends a recording, so its raw audio does not stay in the cache.
+      discardRecordingFile(uri, deleteFile);
       if (isCurrent()) setIsUploading(false);
     }
   }
@@ -426,7 +431,6 @@ export default function App() {
               yet. Enter a local companion URL or consent to a remote server.
             </Text>
           )}
-          {!!lastRecordingUri && <Text style={styles.detail}>{lastRecordingUri}</Text>}
           {lastParticipants && (
             <Text style={styles.detail}>
               {describeParticipants(lastParticipants.confirmedAt, (iso) =>

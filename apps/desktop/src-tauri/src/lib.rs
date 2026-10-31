@@ -3,6 +3,7 @@ mod asr_bench;
 mod corpus;
 pub mod native_whisperx;
 mod prediction;
+pub mod protected_store;
 mod speech_analysis;
 mod speech_pipeline;
 #[cfg(test)]
@@ -29,8 +30,7 @@ pub mod capture {
     pub use crate::transcription::audio_file_capture_metrics;
 }
 
-use std::fs;
-use std::path::PathBuf;
+use std::collections::BTreeMap;
 
 use corpus::{
     backfill_speech_corpus_capture_quality_impl, delete_speech_corpus_session_impl,
@@ -39,6 +39,10 @@ use corpus::{
     SpeechCorpusAnalysis,
 };
 use prediction::{predict_speaker_intent_impl, SpeakerIntentPrediction, SpeakerIntentRequest};
+use protected_store::{
+    open_local_store, Document, KeychainKeys, LocalStore, Namespace, SPEAKER_PROFILES_DOCUMENT,
+    SPEECH_CORPUS_DOCUMENT,
+};
 use speech_analysis::{
     compare_voiceprint_impl, create_voiceprint_impl, AnalysisReport, AnalyzeSpeechRequest,
     SpeakerIdentificationRequest, SpeakerIdentificationResult, SpeakerProfileRequest,
@@ -80,77 +84,239 @@ fn identify_speaker(
 }
 
 #[tauri::command]
-fn load_speaker_profiles(app: tauri::AppHandle) -> Result<Vec<SpeakerProfileResult>, String> {
-    let path = speaker_profiles_path(&app)?;
-    if !path.exists() {
+fn load_speaker_profiles(
+    storage: tauri::State<'_, AppStorage>,
+) -> Result<Vec<SpeakerProfileResult>, String> {
+    let document = storage.0.document(SPEAKER_PROFILES_DOCUMENT)?;
+    let Some(content) = document.load().map_err(|err| err.to_string())? else {
         return Ok(Vec::new());
-    }
-    let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
+    };
     let speakers: Vec<SpeakerProfileResult> =
-        serde_json::from_str(&content).map_err(|err| err.to_string())?;
+        serde_json::from_slice(&content).map_err(|err| err.to_string())?;
     Ok(normalize_speaker_profiles(speakers))
 }
 
 #[tauri::command]
 fn save_speaker_profiles(
-    app: tauri::AppHandle,
+    storage: tauri::State<'_, AppStorage>,
     speakers: Vec<SpeakerProfileResult>,
 ) -> Result<Vec<SpeakerProfileResult>, String> {
-    let path = speaker_profiles_path(&app)?;
+    let document = storage.0.document(SPEAKER_PROFILES_DOCUMENT)?;
     let speakers = normalize_speaker_profiles(speakers);
     let content = serde_json::to_string_pretty(&speakers).map_err(|err| err.to_string())?;
-    fs::write(path, content).map_err(|err| err.to_string())?;
+    document
+        .save(content.as_bytes())
+        .map_err(|err| err.to_string())?;
     Ok(speakers)
 }
 
-#[tauri::command]
-fn load_speech_corpus(app: tauri::AppHandle) -> Result<SpeechCorpusAnalysis, String> {
-    load_speech_corpus_impl(&speech_corpus_path(&app)?).map_err(|err| err.to_string())
+/// The app's local storage, opened once at startup (see `protected_store`).
+struct AppStorage(LocalStore);
+
+/// What the web view learns about its storage when it starts.
+#[derive(serde::Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+enum WebStorageOpened {
+    #[serde(rename_all = "camelCase")]
+    Protected {
+        mechanism: &'static str,
+        /// Whether the web view's local storage was already moved in.
+        migrated: bool,
+        entries: BTreeMap<String, String>,
+    },
+    Unprotected {
+        reason: String,
+    },
+    Locked {
+        reason: String,
+    },
 }
 
 #[tauri::command]
-fn backfill_speech_corpus_capture_quality(
-    app: tauri::AppHandle,
-    qualities: std::collections::BTreeMap<String, serde_json::Value>,
-) -> Result<SpeechCorpusAnalysis, String> {
-    backfill_speech_corpus_capture_quality_impl(&speech_corpus_path(&app)?, &qualities)
+fn protected_storage_open(
+    storage: tauri::State<'_, AppStorage>,
+) -> Result<WebStorageOpened, String> {
+    Ok(match &storage.0 {
+        LocalStore::Protected { store, mechanism } => {
+            let entries = store
+                .entries(Namespace::Web)
+                .map_err(|err| err.to_string())?
+                .into_iter()
+                .map(|(key, value)| {
+                    String::from_utf8(value)
+                        .map(|value| (key, value))
+                        .map_err(|err| err.to_string())
+                })
+                .collect::<Result<_, _>>()?;
+            WebStorageOpened::Protected {
+                mechanism,
+                migrated: storage.0.web_migrated().map_err(|err| err.to_string())?,
+                entries,
+            }
+        }
+        LocalStore::Plain { reason, .. } => WebStorageOpened::Unprotected {
+            reason: reason.clone(),
+        },
+        LocalStore::Locked { reason } => WebStorageOpened::Locked {
+            reason: reason.clone(),
+        },
+    })
+}
+
+#[tauri::command]
+fn protected_storage_migrate(
+    storage: tauri::State<'_, AppStorage>,
+    entries: BTreeMap<String, String>,
+) -> Result<(), String> {
+    storage.0.migrate_web(&entries)
+}
+
+#[tauri::command]
+fn protected_storage_set(
+    storage: tauri::State<'_, AppStorage>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    storage
+        .0
+        .protected()?
+        .write(Namespace::Web, &key, value.as_bytes())
         .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-fn speech_corpus_observations(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    speech_corpus_observations_impl(&speech_corpus_path(&app)?).map_err(|err| err.to_string())
+fn protected_storage_remove(
+    storage: tauri::State<'_, AppStorage>,
+    key: String,
+) -> Result<(), String> {
+    storage
+        .0
+        .protected()?
+        .remove(Namespace::Web, &key)
+        .map_err(|err| err.to_string())
+}
+
+/// Kept session audio arrives as raw bytes (encoded by the web view) with the session id in a
+/// header, so large captures are not inflated into JSON.
+#[tauri::command]
+fn protected_audio_put(
+    storage: tauri::State<'_, AppStorage>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let session_id = request
+        .headers()
+        .get("x-vox-session")
+        .and_then(|value| value.to_str().ok())
+        .filter(|id| !id.is_empty())
+        .ok_or("missing session id")?;
+    let tauri::ipc::InvokeBody::Raw(audio) = request.body() else {
+        return Err("kept audio must be sent as raw bytes".to_string());
+    };
+    storage
+        .0
+        .protected()?
+        .write(Namespace::Audio, session_id, audio)
+        .map_err(|err| err.to_string())
+}
+
+/// The kept audio of a session; an empty response when there is none.
+#[tauri::command]
+fn protected_audio_get(
+    storage: tauri::State<'_, AppStorage>,
+    session_id: String,
+) -> Result<tauri::ipc::Response, String> {
+    let audio = storage
+        .0
+        .protected()?
+        .read(Namespace::Audio, &session_id)
+        .map_err(|err| err.to_string())?;
+    Ok(tauri::ipc::Response::new(audio.unwrap_or_default()))
 }
 
 #[tauri::command]
-fn export_speech_corpus(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    export_speech_corpus_impl(&speech_corpus_path(&app)?).map_err(|err| err.to_string())
+fn protected_audio_delete(
+    storage: tauri::State<'_, AppStorage>,
+    session_id: String,
+) -> Result<(), String> {
+    storage
+        .0
+        .protected()?
+        .remove(Namespace::Audio, &session_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn protected_audio_retain(
+    storage: tauri::State<'_, AppStorage>,
+    session_ids: Vec<String>,
+) -> Result<(), String> {
+    storage
+        .0
+        .protected()?
+        .retain(Namespace::Audio, &session_ids.into_iter().collect())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn load_speech_corpus(
+    storage: tauri::State<'_, AppStorage>,
+) -> Result<SpeechCorpusAnalysis, String> {
+    load_speech_corpus_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn backfill_speech_corpus_capture_quality(
+    storage: tauri::State<'_, AppStorage>,
+    qualities: std::collections::BTreeMap<String, serde_json::Value>,
+) -> Result<SpeechCorpusAnalysis, String> {
+    backfill_speech_corpus_capture_quality_impl(
+        &storage.0.document(SPEECH_CORPUS_DOCUMENT)?,
+        &qualities,
+    )
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn speech_corpus_observations(
+    storage: tauri::State<'_, AppStorage>,
+) -> Result<serde_json::Value, String> {
+    speech_corpus_observations_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn export_speech_corpus(
+    storage: tauri::State<'_, AppStorage>,
+) -> Result<serde_json::Value, String> {
+    export_speech_corpus_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 fn save_speech_corpus_session(
-    app: tauri::AppHandle,
+    storage: tauri::State<'_, AppStorage>,
     session: CorpusSessionInput,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    save_speech_corpus_session_impl(&speech_corpus_path(&app)?, session)
+    save_speech_corpus_session_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, session)
         .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 fn delete_speech_corpus_session(
-    app: tauri::AppHandle,
+    storage: tauri::State<'_, AppStorage>,
     session_id: String,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    delete_speech_corpus_session_impl(&speech_corpus_path(&app)?, &session_id)
+    delete_speech_corpus_session_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, &session_id)
         .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 fn replace_speech_corpus_sessions(
-    app: tauri::AppHandle,
+    storage: tauri::State<'_, AppStorage>,
     sessions: Vec<CorpusSessionInput>,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    replace_speech_corpus_sessions_impl(&speech_corpus_path(&app)?, sessions)
+    replace_speech_corpus_sessions_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, sessions)
         .map_err(|err| err.to_string())
 }
 
@@ -189,6 +355,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             configure_media_permissions(app);
+            app.manage(AppStorage(open_app_storage(app)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -209,7 +376,15 @@ pub fn run() {
             predict_speaker_intent,
             transcribe_audio,
             transcription_models,
-            download_transcription_model
+            download_transcription_model,
+            protected_storage_open,
+            protected_storage_migrate,
+            protected_storage_set,
+            protected_storage_remove,
+            protected_audio_put,
+            protected_audio_get,
+            protected_audio_delete,
+            protected_audio_retain
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stutter Tracker");
@@ -250,16 +425,13 @@ fn configure_media_permissions(app: &tauri::App) {
 #[cfg(not(target_os = "linux"))]
 fn configure_media_permissions(_app: &tauri::App) {}
 
-fn speaker_profiles_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
-    Ok(data_dir.join("known-speakers.json"))
-}
-
-fn speech_corpus_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
-    Ok(data_dir.join("speech-corpus.json"))
+fn open_app_storage(app: &tauri::App) -> LocalStore {
+    match app.path().app_data_dir() {
+        Ok(data_dir) => open_local_store(&data_dir, &KeychainKeys),
+        Err(err) => LocalStore::Locked {
+            reason: format!("the app data directory is unknown: {err}"),
+        },
+    }
 }
 
 fn normalize_speaker_profiles(speakers: Vec<SpeakerProfileResult>) -> Vec<SpeakerProfileResult> {
