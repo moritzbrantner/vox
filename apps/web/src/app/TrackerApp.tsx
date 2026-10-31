@@ -35,6 +35,9 @@ import {
   UNKNOWN_INPUT_ID,
   audioFingerprint,
   type RecordingDescriptor,
+  canStartWithParticipants,
+  OTHER_PARTICIPANTS_REQUIRED_MESSAGE,
+  participantsConfirmationForStart,
   resampleSamples as sharedResampleSamples,
   applyLiveTranscriptUpdate,
   isUnitFinal,
@@ -316,7 +319,20 @@ export function App() {
     soloSpeakerRef.current = declared;
     setSoloSpeakerState(declared);
     saveSoloSpeakerDeclaration(declared);
+    if (declared) setOthersRecorded(false);
   };
+  // Recording other people needs a confirmation made for this session (#66). Neither is stored:
+  // the agreement is cleared whenever a recording ends, so it never carries over.
+  const [othersRecorded, setOthersRecordedState] = useState(false);
+  const [othersAgreed, setOthersAgreed] = useState(false);
+  const setOthersRecorded = (declared: boolean) => {
+    setOthersRecordedState(declared);
+    setOthersAgreed(false);
+    if (declared) setSoloSpeaker(false);
+  };
+  useEffect(() => {
+    if (!isRecording) setOthersAgreed(false);
+  }, [isRecording]);
   const segmentsRef = useRef<TranscriptSegment[]>([]);
   const pausesRef = useRef<PauseSpan[]>([]);
   const speakersRef = useRef<SpeakerProfile[]>(speakers);
@@ -876,6 +892,12 @@ export function App() {
     if (isRecording || isFinishingCapture || workspaceClaimPendingRef.current) {
       return;
     }
+    // A session that records other people does not start without this session's confirmation.
+    const participants = { othersRecorded, othersAgreed };
+    if (!canStartWithParticipants(participants)) {
+      setMessage(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
+      return;
+    }
     // Starting over sets the previous unsaved capture aside for recovery, which needs a current
     // checkpoint of it.
     if (!canSetAsideWorkspaceCapture()) {
@@ -917,6 +939,8 @@ export function App() {
         discontinuities: [],
         speakerAssessment: soloSpeakerRef.current ? "singleSpeakerDeclared" : "unknown",
       };
+      const otherParticipants = participantsConfirmationForStart(participants);
+      if (otherParticipants) captureDescriptorRef.current.otherParticipants = otherParticipants;
       gapTrackerRef.current = createGapTracker(recorder.sampleRate, {
         startedAtSeconds: performance.now() / 1000,
       });
@@ -2887,6 +2911,10 @@ export function App() {
         onRecordingToggle={isRecording ? stopRecording : startRecording}
         soloSpeaker={soloSpeaker}
         onSoloSpeakerChange={setSoloSpeaker}
+        othersRecorded={othersRecorded}
+        onOthersRecordedChange={setOthersRecorded}
+        othersAgreed={othersAgreed}
+        onOthersAgreedChange={setOthersAgreed}
       />
 
       <StatusMetrics report={report} speechStats={speechStats} blockerStats={blockerStats} />

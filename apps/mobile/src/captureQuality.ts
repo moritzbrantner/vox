@@ -2,6 +2,7 @@ import {
   type AnalysisReport,
   assessRunCaptureQuality,
   captureCoverageNote,
+  type OtherParticipantsConfirmation,
   type PreprocessingSetting,
   type RecordingDescriptor,
   type TranscribeAudioResult,
@@ -17,6 +18,8 @@ export type MobileRecordingInput = {
   channelCount: number;
   /** The user's "Only I speak" declaration for this recording. */
   soloSpeaker: boolean;
+  /** This session's confirmation that everyone else recorded agreed; null when no one else was. */
+  otherParticipants?: OtherParticipantsConfirmation | null;
   /** Only what the platform reports as applied; anything left out stays unknown. */
   preprocessing?: Partial<Record<keyof Preprocessing, PreprocessingSetting>>;
 };
@@ -39,6 +42,7 @@ export function mobileRecordingDescriptor(input: MobileRecordingInput): Recordin
     },
     discontinuities: [],
     speakerAssessment: input.soloSpeaker ? "singleSpeakerDeclared" : "unknown",
+    ...(input.otherParticipants ? { otherParticipants: input.otherParticipants } : {}),
   };
 }
 

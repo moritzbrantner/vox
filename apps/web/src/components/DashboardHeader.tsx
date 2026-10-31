@@ -1,6 +1,9 @@
 import type { ProcessingDestination } from "@stutter-tracker/compute-client";
 import {
+  canStartWithParticipants,
   describeCompute,
+  OTHER_PARTICIPANTS_REQUIRED_MESSAGE,
+  OTHER_PARTICIPANTS_STATEMENT,
   type TranscriptCompute,
   type TranscriptionDevicePreference,
 } from "@stutter-tracker/shared";
@@ -30,6 +33,12 @@ type DashboardHeaderProps = {
   /** Declared before recording; fixed for the capture it starts. */
   soloSpeaker: boolean;
   onSoloSpeakerChange: (declared: boolean) => void;
+  /** The next session will record other people; it then needs `othersAgreed` to start. */
+  othersRecorded: boolean;
+  onOthersRecordedChange: (declared: boolean) => void;
+  /** This session's confirmation that everyone else agreed; cleared when a recording ends. */
+  othersAgreed: boolean;
+  onOthersAgreedChange: (agreed: boolean) => void;
 };
 
 export function DashboardHeader({
@@ -51,8 +60,14 @@ export function DashboardHeader({
   onRecordingToggle,
   soloSpeaker,
   onSoloSpeakerChange,
+  othersRecorded,
+  onOthersRecordedChange,
+  othersAgreed,
+  onOthersAgreedChange,
 }: DashboardHeaderProps) {
   const whisperCpp = transcription.engine === "whisperCpp";
+  const needsAgreement =
+    !isRecording && !canStartWithParticipants({ othersRecorded, othersAgreed });
   return (
     <section className="mb-4 flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
       <div>
@@ -145,11 +160,37 @@ export function DashboardHeader({
           />
           Only I speak
         </label>
+        <label className="flex items-center gap-2 text-sm text-[#2d4e43]">
+          <input
+            type="checkbox"
+            checked={othersRecorded}
+            disabled={isRecording}
+            onChange={(event) => onOthersRecordedChange(event.target.checked)}
+          />
+          Recording other people
+        </label>
+        {othersRecorded && (
+          <label className="flex items-center gap-2 text-sm text-[#2d4e43]">
+            <input
+              type="checkbox"
+              checked={othersAgreed}
+              disabled={isRecording}
+              onChange={(event) => onOthersAgreedChange(event.target.checked)}
+            />
+            {OTHER_PARTICIPANTS_STATEMENT}
+          </label>
+        )}
         <button
           className={cx(isRecording ? dangerButtonClass : primaryButtonClass)}
           onClick={onRecordingToggle}
-          disabled={isFinishingCapture}
-          title={isFinishingCapture ? "Finishing the previous recording" : undefined}
+          disabled={isFinishingCapture || needsAgreement}
+          title={
+            isFinishingCapture
+              ? "Finishing the previous recording"
+              : needsAgreement
+                ? OTHER_PARTICIPANTS_REQUIRED_MESSAGE
+                : undefined
+          }
         >
           {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
           {isRecording ? "Stop" : "Record"}
