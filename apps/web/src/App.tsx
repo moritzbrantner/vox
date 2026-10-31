@@ -1,17 +1,16 @@
 import { App as TrackerApp } from "./app/TrackerApp";
 import { AuditoryFeedbackLab } from "./components/AuditoryFeedbackLab";
 
+export { desktopAnalyzer, fallbackAnalyze } from "./app/analysis";
+export { fallbackPredictSpeakerIntent } from "./app/speakerIntent";
+export { countUnverifiedCorpusSessions } from "./app/speechCorpus";
 export {
-  countUnverifiedCorpusSessions,
-  desktopAnalyzer,
-  fallbackAnalyze,
-  fallbackPredictSpeakerIntent,
   offsetTranscriptSegments,
   resampleSamples,
   staticModelStatuses,
   summarizeTranscriptionChunks,
-  formatTime,
-} from "./app/TrackerApp";
+} from "./app/transcription";
+export { formatTime } from "./utils/formatting";
 
 export function App() {
   return (
