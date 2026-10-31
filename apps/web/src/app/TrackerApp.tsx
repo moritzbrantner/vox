@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { latestVoiceActivity } from "@stutter-tracker/shared";
 import { AnnotationExchangePanel } from "../components/AnnotationExchangePanel";
 import { AnnotationWorkbench } from "../components/AnnotationWorkbench";
 import { BlindReview } from "../components/BlindReview";
@@ -14,6 +15,7 @@ import { StatusMetrics } from "../components/StatusMetrics";
 import { StorageProtectionNotice } from "../components/StorageProtectionNotice";
 import { TranscriptRevisionsPanel } from "../components/TranscriptRevisionsPanel";
 import { ValidationPanel } from "../components/ValidationPanel";
+import { VoiceActivityTimeline } from "../components/VoiceActivityTimeline";
 import { buttonClass } from "../components/styles";
 import { encryptBackup } from "../storage/encryptedBackup";
 import { saveRemoteConsent } from "../storage/localStorage";
@@ -34,6 +36,7 @@ import { useSessionUpdates } from "./hooks/useSessionUpdates";
 import { useSpeakerProfiles } from "./hooks/useSpeakerProfiles";
 import { useTranscriptionModels } from "./hooks/useTranscriptionModels";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useVoiceActivity } from "./hooks/useVoiceActivity";
 import { loadSpeechCorpusExport, ownSessions } from "./speechCorpus";
 
 export function App() {
@@ -85,6 +88,7 @@ export function App() {
     readable,
     isRecordingRef,
   } = useWorkspace();
+  const voiceActivity = useVoiceActivity();
   const {
     soloSpeaker,
     soloSpeakerRef,
@@ -296,6 +300,7 @@ export function App() {
     takeWorkspaceCapture,
     canSetAsideWorkspaceCapture,
     setAsideUnsavedCapture,
+    voiceActivity,
   });
   const {
     updateStoredSession,
@@ -371,6 +376,7 @@ export function App() {
     captureIdRef,
     releaseWorkspaceCapture,
     startReferenceTranscript,
+    voiceActivityEvidenceRef: voiceActivity.evidenceRef,
   });
   const { deletingSessionId, deleteSession, restoreSessions } = useSessionRemoval({
     setSegments,
@@ -524,6 +530,20 @@ export function App() {
           transcriptionChunks={transcriptionChunks}
           hasAnalysisEvents={report.events.length > 0}
           level={level}
+          voiceActivity={
+            <VoiceActivityTimeline
+              live={viewedSession ? null : voiceActivity.live}
+              liveDescriptor={viewedSession ? null : captureDescriptorRef.current}
+              evidence={
+                viewedSession
+                  ? (latestVoiceActivity(viewedSession)?.evidence ?? null)
+                  : voiceActivity.evidence
+              }
+              reviewWithoutEvidence={Boolean(viewedSession && !latestVoiceActivity(viewedSession))}
+              isRecording={isRecording}
+              now={performance.now()}
+            />
+          }
           transcript={transcript}
           transcriptSegments={segments}
           readableTranscript={readable}

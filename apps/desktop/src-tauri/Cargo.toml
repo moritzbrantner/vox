@@ -34,7 +34,7 @@ audio-analysis-pitch = { package = "moenarch-audio-analysis-pitch", version = "=
 audio-analysis-recognition = { package = "moenarch-audio-analysis-recognition", version = "=0.1.0" }
 audio-analysis-rhythm = { package = "moenarch-audio-analysis-rhythm", version = "=0.1.0" }
 audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", version = "=0.1.4" }
-audio-analysis-transcription = { package = "moenarch-audio-analysis-transcription", version = "=0.1.15", features = ["native"] }
+audio-analysis-transcription = { package = "moenarch-audio-analysis-transcription", version = "=0.1.15", features = ["native", "silero-vad"] }
 hound = "3.5"
 media-core = { package = "moenarch-media-core", version = "=0.1.0" }
 serde = { version = "1", features = ["derive"] }

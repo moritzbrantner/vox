@@ -24,6 +24,7 @@ import type { useLiveAnalysis } from "./useLiveAnalysis";
 import type { useChunkTranscription } from "./useChunkTranscription";
 import type { useCaptureRecovery } from "./useCaptureRecovery";
 import type { useReanalysis } from "./useReanalysis";
+import type { VoiceActivityEvidence } from "@stutter-tracker/shared";
 
 type SessionSavingDeps = Pick<
   ReturnType<typeof useWorkspace>,
@@ -57,7 +58,9 @@ type SessionSavingDeps = Pick<
   Pick<ReturnType<typeof useLiveAnalysis>, "isAnalyzing"> &
   Pick<ReturnType<typeof useChunkTranscription>, "captureInProgress"> &
   Pick<ReturnType<typeof useCaptureRecovery>, "captureIdRef" | "releaseWorkspaceCapture"> &
-  Pick<ReturnType<typeof useReanalysis>, "startReferenceTranscript">;
+  Pick<ReturnType<typeof useReanalysis>, "startReferenceTranscript"> & {
+    voiceActivityEvidenceRef: { current: VoiceActivityEvidence | null };
+  };
 
 /** Saving the workspace as a new session or as a new analysis run of the loaded one. */
 export function useSessionSaving({
@@ -89,6 +92,7 @@ export function useSessionSaving({
   captureIdRef,
   releaseWorkspaceCapture,
   startReferenceTranscript,
+  voiceActivityEvidenceRef,
 }: SessionSavingDeps) {
   const newSessionSavePendingRef = useRef(false);
 
@@ -133,6 +137,7 @@ export function useSessionSaving({
     }
     const captureId = captureIdRef.current;
     const descriptor = captureDescriptorRef.current;
+    const voiceActivity = voiceActivityEvidenceRef.current;
     // The capture's audio, kept on the device when the user asked for it; either way it feeds the
     // automatic reference transcript of this recording.
     const capturedAudio =
@@ -168,7 +173,13 @@ export function useSessionSaving({
         startedAt,
         segments,
         pauses,
-        report,
+        // Speech detection of this very capture run only; a loaded session keeps its own runs.
+        report:
+          voiceActivity?.captureRunId &&
+          descriptor?.sessionId === captureId &&
+          voiceActivity.captureRunId === descriptor.runId
+            ? { ...report, voiceActivity }
+            : report,
         run: reportRun ?? {
           id: crypto.randomUUID(),
           createdAt: null,

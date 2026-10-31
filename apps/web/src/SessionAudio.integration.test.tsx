@@ -182,3 +182,26 @@ describe("audio kept for review (vox#23)", () => {
     expect(await getSessionAudio(sessions[0].id)).toBeNull();
   });
 });
+
+describe("speech detection through record → save → review (audio-analysis#151)", () => {
+  it("off the desktop, saves and reviews speech detection as unavailable, never as silence", async () => {
+    renderApp();
+    await recordTwoSeconds();
+    await userEvent.click(screen.getByLabelText("Show speech detection timeline"));
+    expect(screen.getByText(/Speech detection unavailable/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+
+    const [session] = stored();
+    expect(session.report.voiceActivity).toMatchObject({
+      captureRunId: session.recordings[0].runId,
+      status: "unavailable",
+      provider: null,
+      speech: [],
+      unknown: [{ startSeconds: 0, endSeconds: 2, reason: "notAnalyzed" }],
+    });
+    // The whole-session speaker declaration is the recording's own and stays untouched.
+    expect(session.recordings[0].speakerAssessment).toBeDefined();
+    expect(JSON.stringify(createSessionBackup(stored(), new Date()))).toContain('"voiceActivity"');
+  });
+});

@@ -126,6 +126,11 @@ export type AnalysisReport = {
   /** Capture-quality gate of the run; reports without it predate the gate. */
   captureQuality?: import("./capture").RunCaptureQuality;
   /**
+   * Silero speech/non-speech evidence of the capture (desktop only). Absent when the run had no
+   * acoustic VAD; see `latestVoiceActivity` for the newest run that has it.
+   */
+  voiceActivity?: import("./voiceActivity").VoiceActivityEvidence;
+  /**
    * Native analysis only: observations that events cite, plus explicit missing channels.
    * Absent from the shared fallback and older reports, which do not produce typed evidence.
    */
@@ -1283,3 +1288,4 @@ export * from "./transcriptText";
 export * from "./transcriptRevisions";
 export * from "./consent";
 export * from "./evidenceExport";
+export * from "./voiceActivity";

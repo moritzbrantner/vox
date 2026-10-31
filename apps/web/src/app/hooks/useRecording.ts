@@ -22,6 +22,7 @@ import type { useSpeakerProfiles } from "./useSpeakerProfiles";
 import type { useTranscriptionModels } from "./useTranscriptionModels";
 import type { useChunkTranscription } from "./useChunkTranscription";
 import type { useCaptureRecovery } from "./useCaptureRecovery";
+import type { useVoiceActivity } from "./useVoiceActivity";
 
 type RecordingDeps = Pick<
   ReturnType<typeof useWorkspace>,
@@ -85,7 +86,9 @@ type RecordingDeps = Pick<
     | "takeWorkspaceCapture"
     | "canSetAsideWorkspaceCapture"
     | "setAsideUnsavedCapture"
-  >;
+  > & {
+    voiceActivity: Pick<ReturnType<typeof useVoiceActivity>, "start" | "push" | "seal" | "finish">;
+  };
 
 /** A recording run: microphone, browser recognition, level and pauses, and finishing the capture. */
 export function useRecording({
@@ -139,6 +142,7 @@ export function useRecording({
   takeWorkspaceCapture,
   canSetAsideWorkspaceCapture,
   setAsideUnsavedCapture,
+  voiceActivity,
 }: RecordingDeps) {
   const [isMatchingVoice, setIsMatchingVoice] = useState(false);
 
@@ -211,6 +215,7 @@ export function useRecording({
       gapTrackerRef.current = createGapTracker(recorder.sampleRate, {
         startedAtSeconds: performance.now() / 1000,
       });
+      voiceActivity.start(captureDescriptorRef.current.runId, recorder.sampleRate);
       recordingTranscriptionRef.current = transcriptionRef.current;
       recordingLanguageRef.current = language;
       sessionLanguageRef.current = language;
@@ -353,6 +358,7 @@ export function useRecording({
       samples.splice(0, samples.length - maxSamples);
     }
     enqueueAvailableTranscriptionChunks(false);
+    voiceActivity.push(chunk);
 
     const frame = chunk.length ? chunk : new Float32Array();
     void (async () => {
@@ -426,7 +432,10 @@ export function useRecording({
   async function finishCapture() {
     const shouldTranscribeNative = recordingTranscriptionRef.current?.engine !== "browser";
     const capturedSamples = samplesRef.current.slice();
+    const capturedSampleCount = capturedSampleCountRef.current;
     const capturedSampleRate = sampleRateRef.current;
+    // Later recorder chunks are not part of the capture, so live detection stops with it.
+    voiceActivity.seal();
     setIsRecording(false);
     isRecordingRef.current = false;
     const recognition = recognitionRef.current;
@@ -464,6 +473,18 @@ export function useRecording({
     }
     gapTrackerRef.current = null;
     setLevel(0);
+    // Speech detection of exactly the samples this capture keeps (live and after Stop).
+    const descriptor = captureDescriptorRef.current;
+    if (descriptor) {
+      await voiceActivity
+        .finish({
+          descriptor,
+          samples: capturedSamples,
+          sampleRate: capturedSampleRate,
+          capturedSampleCount,
+        })
+        .catch(() => null);
+    }
     await recognitionEnded;
     if (!shouldTranscribeNative) {
       setMessage("Stopped");

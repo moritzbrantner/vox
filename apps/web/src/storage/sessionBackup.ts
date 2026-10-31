@@ -3,6 +3,7 @@ import {
   migrateSessionRecord,
   isOtherParticipantsConfirmation,
   isRunCaptureQuality,
+  isVoiceActivityEvidence,
   SESSION_SCHEMA_VERSION,
   TRANSCRIPTION_ENGINES,
   transcriptObservationIds,
@@ -474,7 +475,8 @@ export function isAnalysisReport(value: unknown) {
     value.events.every(isStutterEvent) &&
     isByKind(value.byKind) &&
     isOptionalObject(value.acousticStats, isAcousticStats) &&
-    (value.captureQuality === undefined || isRunCaptureQuality(value.captureQuality))
+    (value.captureQuality === undefined || isRunCaptureQuality(value.captureQuality)) &&
+    (value.voiceActivity === undefined || isVoiceActivityEvidence(value.voiceActivity))
   );
 }
 
