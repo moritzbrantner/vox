@@ -12,6 +12,7 @@ mod speech_reference;
 mod stutter_bench;
 mod text_analysis_transcription;
 pub mod transcription;
+pub mod voice_activity;
 
 // Local compatibility names keep product code stable while the historical
 // monolith package surfaces are mapped to their extracted capability owners.
@@ -55,10 +56,58 @@ use transcription::{
     TranscriptionModelStatus, TranscriptionModelsRequest, TranscriptionModelsResult,
     TranscriptionProgressEvent,
 };
+use voice_activity::{
+    analyze_finite, FiniteRequest, FiniteResult, LiveFinishRequest, LivePushRequest,
+    LiveStartRequest, LiveStarted, LiveUpdate, LiveVoiceActivity, LiveVoiceActivityState,
+};
 
 #[tauri::command]
 fn analyze_speech_session(request: AnalyzeSpeechRequest) -> Result<AnalysisReport, String> {
     speech_pipeline::analyze_speech_session(request).map_err(|err| err.to_string())
+}
+
+/// Starts live voice activity for a capture run; a previous run's session is dropped.
+#[tauri::command]
+async fn voice_activity_start(
+    state: tauri::State<'_, LiveVoiceActivityState>,
+    request: LiveStartRequest,
+) -> Result<LiveStarted, String> {
+    let (session, started) = LiveVoiceActivity::start(&request)?;
+    *state.0.lock().map_err(|err| err.to_string())? = Some(session);
+    Ok(started)
+}
+
+#[tauri::command]
+async fn voice_activity_push(
+    state: tauri::State<'_, LiveVoiceActivityState>,
+    request: LivePushRequest,
+) -> Result<LiveUpdate, String> {
+    let mut guard = state.0.lock().map_err(|err| err.to_string())?;
+    match guard.as_mut() {
+        Some(session) => session.push(&request),
+        None => Err(format!("no voice activity run {}", request.run_id)),
+    }
+}
+
+#[tauri::command]
+async fn voice_activity_finish(
+    state: tauri::State<'_, LiveVoiceActivityState>,
+    request: LiveFinishRequest,
+) -> Result<LiveUpdate, String> {
+    let mut guard = state.0.lock().map_err(|err| err.to_string())?;
+    match guard.take() {
+        Some(session) if session.run_id() == request.run_id => Ok(session.finish()),
+        other => {
+            *guard = other;
+            Err(format!("no voice activity run {}", request.run_id))
+        }
+    }
+}
+
+/// Silero over a finished capture.
+#[tauri::command]
+async fn analyze_voice_activity(request: FiniteRequest) -> Result<FiniteResult, String> {
+    analyze_finite(&request)
 }
 
 #[tauri::command]
@@ -356,6 +405,7 @@ pub fn run() {
         .setup(|app| {
             configure_media_permissions(app);
             app.manage(AppStorage(open_app_storage(app)));
+            app.manage(LiveVoiceActivityState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -384,7 +434,11 @@ pub fn run() {
             protected_audio_put,
             protected_audio_get,
             protected_audio_delete,
-            protected_audio_retain
+            protected_audio_retain,
+            voice_activity_start,
+            voice_activity_push,
+            voice_activity_finish,
+            analyze_voice_activity
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stutter Tracker");

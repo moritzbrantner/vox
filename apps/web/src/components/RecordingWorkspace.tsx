@@ -52,6 +52,8 @@ type RecordingWorkspaceProps = {
   transcriptionChunks: TranscriptionChunkRecord[];
   hasAnalysisEvents: boolean;
   level: number;
+  /** Optional speech detection timeline (live or the reviewed session). */
+  voiceActivity?: ReactNode;
   /** Verbatim transcript: the analysis evidence. */
   transcript: string;
   /** The verbatim transcript's segments, shown inline with unaligned spans marked. */
@@ -95,6 +97,7 @@ export function RecordingWorkspace({
   transcriptionChunks,
   hasAnalysisEvents,
   level,
+  voiceActivity,
   transcript,
   transcriptSegments,
   readableTranscript,
@@ -209,6 +212,8 @@ export function RecordingWorkspace({
           />
         ))}
       </div>
+
+      {voiceActivity}
 
       <label className="mb-2 flex items-center gap-2 text-sm">
         <input

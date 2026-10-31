@@ -76,6 +76,8 @@ export type AnalysisReport = {
   captureMetrics?: import("@stutter-tracker/shared").MeasuredCaptureMetrics;
   /** Capture-quality gate of the run; reports without it predate the gate. */
   captureQuality?: import("@stutter-tracker/shared").RunCaptureQuality;
+  /** Silero speech/non-speech evidence of the capture (desktop only). */
+  voiceActivity?: import("@stutter-tracker/shared").VoiceActivityEvidence;
   /**
    * Detections withheld for insufficient evidence. Not events: shown only in the analysis
    * details and left out of every count, rate and trend.
