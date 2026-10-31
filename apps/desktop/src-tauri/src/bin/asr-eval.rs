@@ -9,7 +9,9 @@
 //! chunk exactly as recording (8 s) and the post-session reference transcript (30 s) do.
 //! `--engine native-whisperx` runs the native-whisperx CLI once per recording instead (its own
 //! VAD (`--vad-method`, `--vad-model-bundle`), `--chunk-seconds` as its chunk size, wav2vec2
-//! alignment unless `--no-align`), on `--device auto|cpu|cuda`.
+//! alignment unless `--no-align`), on `--device auto|cpu|cuda`. For the product engine,
+//! `--device auto` allows its GPU path (native-whisperx on CUDA per chunk, whisper.cpp CPU
+//! fallback); without it the product engine runs whisper.cpp on the CPU.
 //! Hypotheses and reports contain corpus text: keep them next to the corpus, outside git.
 
 use std::fs;
@@ -19,7 +21,8 @@ use std::time::Instant;
 
 use sha2::{Digest, Sha256};
 use stutter_tracker_lib::transcription::{
-    transcribe_audio_impl, whisper_cpp_model_path, TranscribeAudioRequest, TranscriptionProvider,
+    transcribe_audio_impl, whisper_cpp_model_path, DevicePreference, TranscribeAudioRequest,
+    TranscriptionProvider,
 };
 
 #[allow(dead_code)]
@@ -222,7 +225,16 @@ fn transcribe(
     let threads = std::thread::available_parallelism()
         .ok()
         .map(|threads| threads.get());
+    // The product engine stays on the CPU (the baseline's meaning) unless `--device auto` lets it
+    // take the GPU path through native-whisperx, as the app does by default.
+    let product_device = match args.device.as_deref() {
+        Some("auto") | Some("cuda") => DevicePreference::Auto,
+        _ => DevicePreference::Cpu,
+    };
     let engine = match args.engine {
+        Engine::WhisperCpp if product_device == DevicePreference::Auto => {
+            format!("{} (auto device)", Engine::WhisperCpp.id())
+        }
         Engine::WhisperCpp => Engine::WhisperCpp.id().to_string(),
         Engine::NativeWhisperx => format!(
             "{} ({}, {} VAD{})",
@@ -310,6 +322,7 @@ fn transcribe(
                     provider: TranscriptionProvider::WhisperCpp,
                     model: model.clone(),
                     language: Some(item.language.clone()),
+                    device: product_device,
                 })
                 .map_err(|error| format!("{}/{}: {error}", subset.id, item.id))?;
                 segments.extend(

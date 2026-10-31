@@ -81,7 +81,7 @@ fn print_progress(event: TranscriptionProgressEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stutter_tracker_lib::transcription::TranscriptionProvider;
+    use stutter_tracker_lib::transcription::{DevicePreference, TranscriptionProvider};
 
     #[test]
     fn parses_transcription_models_command() {
@@ -122,6 +122,7 @@ mod tests {
                     request.provider,
                     TranscriptionProvider::WhisperCpp
                 ));
+                assert_eq!(request.device, DevicePreference::Auto);
             }
             _ => panic!("unexpected command"),
         }
@@ -333,6 +334,7 @@ mod tests {
                 segments: Vec::new(),
                 provider: TranscriptionProviderResult::WhisperCpp,
                 model: "base.en".to_string(),
+                compute: None,
                 capture_metrics,
             };
 

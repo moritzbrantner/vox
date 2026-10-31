@@ -152,10 +152,7 @@ export type SpeakerIdentification = {
 
 export type TranscriptionEngineId = "browser" | "whisperCpp" | "whisperCli" | "fasterWhisper";
 
-export type TranscriptionSettings = {
-  engine: TranscriptionEngineId;
-  model: string;
-};
+export type TranscriptionSettings = import("@stutter-tracker/shared").TranscriptionSettings;
 
 export type TranscriptionEngine = {
   id: TranscriptionEngineId;

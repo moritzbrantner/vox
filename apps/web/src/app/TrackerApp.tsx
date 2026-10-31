@@ -47,6 +47,8 @@ import {
   referenceTranscriptApplies,
   reviseTranscript,
   startLiveTranscript,
+  type TranscriptCompute,
+  type TranscriptionDevicePreference,
   type TranscriptPreprocessing,
   type TranscriptProvenance,
   transcriptProvenance,
@@ -250,6 +252,8 @@ export function App() {
   const [transcription, setTranscription] = useState<TranscriptionSettings>(() =>
     loadTranscriptionSettings(),
   );
+  // Backend and device of the latest whisper.cpp-engine transcription, for diagnostics (vox#139).
+  const [lastCompute, setLastCompute] = useState<TranscriptCompute | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<TranscriptionProgressEvent | null>(null);
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [modelPreparationFailures, setModelPreparationFailures] = useState<
@@ -1675,7 +1679,11 @@ export function App() {
     referencePendingRef.current.add(session.id);
     setReferencePendingIds([...referencePendingRef.current]);
     try {
-      const settings: TranscriptionSettings = { engine: "whisperCpp", model };
+      const settings: TranscriptionSettings = {
+        engine: "whisperCpp",
+        model,
+        device: transcriptionRef.current.device,
+      };
       const statuses = await loadTranscriptionModels("whisperCpp").catch(() => []);
       if (!statuses.some((status) => status.id === model && status.cached)) {
         return;
@@ -1688,6 +1696,8 @@ export function App() {
       const chunk = Math.round(audio.sampleRate * REFERENCE_CHUNK_SECONDS);
       const segments: TranscriptSegment[] = [];
       let detectedLanguage: string | null = null;
+      // The last chunk's: after a GPU failure every later chunk runs on the CPU.
+      let compute: TranscriptCompute | null = null;
       for (let start = 0; start < audio.samples.length; start += chunk) {
         const end = Math.min(audio.samples.length, start + chunk);
         setMessage(
@@ -1705,6 +1715,8 @@ export function App() {
           language,
         );
         detectedLanguage ??= result.language ?? null;
+        compute = result.compute ?? compute;
+        if (result.compute) setLastCompute(result.compute);
         const identified = await identifyTranscriptSpeakers(
           result.segments,
           samples,
@@ -1743,6 +1755,7 @@ export function App() {
           modelSampleRate: TRANSCRIPTION_TARGET_SAMPLE_RATE,
           chunkSeconds: REFERENCE_CHUNK_SECONDS,
         },
+        compute,
       });
       const revision: { record: SavedSession | null } = { record: null };
       const saved = await updateStoredSession(
@@ -2566,6 +2579,7 @@ export function App() {
   function updateTranscriptionEngine(engine: TranscriptionEngineId) {
     const nextEngine = getTranscriptionEngine(engine);
     const next = {
+      ...transcription,
       engine,
       model: nextEngine.models[0],
     };
@@ -2575,6 +2589,12 @@ export function App() {
 
   function updateTranscriptionModel(model: string) {
     const next = { ...transcription, model };
+    setTranscription(next);
+    localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
+  }
+
+  function updateTranscriptionDevice(device: TranscriptionDevicePreference) {
+    const next = { ...transcription, device };
     setTranscription(next);
     localStorage.setItem(TRANSCRIPTION_KEY, JSON.stringify(next));
   }
@@ -2741,7 +2761,9 @@ export function App() {
           language,
           detectedLanguage: result.language ?? null,
           preprocessing: provisionalPreprocessing(settings.engine, sampleRate),
+          compute: result.compute,
         });
+        if (result.compute) setLastCompute(result.compute);
         const chunkSegments = await identifyTranscriptSpeakers(
           result.segments,
           transcriptionSamples,
@@ -2859,6 +2881,8 @@ export function App() {
         }}
         onEngineChange={updateTranscriptionEngine}
         onModelChange={updateTranscriptionModel}
+        onDeviceChange={updateTranscriptionDevice}
+        lastCompute={lastCompute}
         onLanguageChange={setLanguage}
         onRecordingToggle={isRecording ? stopRecording : startRecording}
         soloSpeaker={soloSpeaker}
@@ -3242,6 +3266,7 @@ async function transcribeAudio(
   provider?: TranscriptionEngineId;
   model?: string;
   language?: string | null;
+  compute?: TranscriptCompute;
 }> {
   if (!isDesktopApp()) {
     return computeClient.transcribeAudio({
@@ -3250,6 +3275,7 @@ async function transcribeAudio(
       provider: settings.engine,
       model: settings.model,
       language,
+      device: settings.device,
     });
   }
   return invoke<{
@@ -3257,6 +3283,7 @@ async function transcribeAudio(
     provider?: TranscriptionEngineId;
     model?: string;
     language?: string | null;
+    compute?: TranscriptCompute;
   }>("transcribe_audio", {
     request: {
       samples,
@@ -3264,6 +3291,7 @@ async function transcribeAudio(
       provider: settings.engine,
       model: settings.model,
       language,
+      device: settings.device,
     },
   });
 }
@@ -4145,7 +4173,7 @@ function loadTranscriptionSettings(): TranscriptionSettings {
       : engine.models.includes(fallback.model)
         ? fallback.model
         : engine.models[0];
-    return { engine: engine.id, model };
+    return { engine: engine.id, model, device: parsed?.device === "cpu" ? "cpu" : "auto" };
   } catch {
     return defaultTranscriptionSettings();
   }
@@ -4153,8 +4181,8 @@ function loadTranscriptionSettings(): TranscriptionSettings {
 
 function defaultTranscriptionSettings(): TranscriptionSettings {
   return isDesktopApp()
-    ? { engine: "whisperCpp", model: "base.en" }
-    : { engine: "browser", model: "default" };
+    ? { engine: "whisperCpp", model: "base.en", device: "auto" }
+    : { engine: "browser", model: "default", device: "auto" };
 }
 
 export function staticModelStatuses(engine: TranscriptionEngineId): TranscriptionModelStatus[] {

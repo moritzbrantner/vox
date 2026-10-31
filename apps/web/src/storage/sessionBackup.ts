@@ -162,7 +162,11 @@ function isTranscriptProvenance(value: unknown) {
     (value.detectedLanguage === null || typeof value.detectedLanguage === "string") &&
     isRecord(value.preprocessing) &&
     Array.isArray(value.limitations) &&
-    value.limitations.every((limitation) => typeof limitation === "string")
+    value.limitations.every((limitation) => typeof limitation === "string") &&
+    (value.compute === undefined ||
+      (isRecord(value.compute) &&
+        (value.compute.backend === "nativeWhisperx" || value.compute.backend === "whisperCpp") &&
+        (value.compute.device === "cuda" || value.compute.device === "cpu")))
   );
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { fallbackAnalyze, type TranscriptSegment } from "./index";
+import { describeCompute, fallbackAnalyze, type TranscriptSegment } from "./index";
 import { createSessionRecord, observationFingerprint } from "./sessions";
 import {
   applyLiveTranscriptUpdate,
@@ -172,6 +172,33 @@ describe("provenance", () => {
         preprocessing,
       }).limitations,
     ).toEqual([]);
+  });
+
+  test("records the backend and device only when the engine reports them", () => {
+    const gpu = { backend: "nativeWhisperx", device: "cuda" } as const;
+    expect(
+      transcriptProvenance({
+        engine: "whisperCpp",
+        model: "base.en",
+        language: "en-US",
+        preprocessing,
+        compute: gpu,
+      }).compute,
+    ).toEqual(gpu);
+    expect(describeCompute(gpu)).toBe("native-whisperx on CUDA");
+    expect(
+      describeCompute({ backend: "whisperCpp", device: "cpu", gpuUnavailableReason: "no GPU" }),
+    ).toBe("whisper.cpp on CPU");
+    expect(
+      "compute" in
+        transcriptProvenance({
+          engine: "browser",
+          model: "default",
+          language: "en-US",
+          preprocessing,
+          compute: null,
+        }),
+    ).toBe(false);
   });
 
   test("the fixed reference model applies only when it is larger than the provisional one", () => {

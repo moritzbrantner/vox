@@ -1,4 +1,9 @@
 import type { ProcessingDestination } from "@stutter-tracker/compute-client";
+import {
+  describeCompute,
+  type TranscriptCompute,
+  type TranscriptionDevicePreference,
+} from "@stutter-tracker/shared";
 import { Mic, MicOff } from "lucide-react";
 import type { TranscriptionEngine, TranscriptionEngineId, TranscriptionSettings } from "../types";
 import { controlClass, cx, dangerButtonClass, eyebrowClass, primaryButtonClass } from "./styles";
@@ -17,6 +22,9 @@ type DashboardHeaderProps = {
   onRemoteConsentChange: (granted: boolean) => void;
   onEngineChange: (engine: TranscriptionEngineId) => void;
   onModelChange: (model: string) => void;
+  onDeviceChange: (device: TranscriptionDevicePreference) => void;
+  /** Backend and device of the latest whisper.cpp-engine transcription; null before the first. */
+  lastCompute: TranscriptCompute | null;
   onLanguageChange: (language: string) => void;
   onRecordingToggle: () => void;
   /** Declared before recording; fixed for the capture it starts. */
@@ -37,11 +45,14 @@ export function DashboardHeader({
   onRemoteConsentChange,
   onEngineChange,
   onModelChange,
+  onDeviceChange,
+  lastCompute,
   onLanguageChange,
   onRecordingToggle,
   soloSpeaker,
   onSoloSpeakerChange,
 }: DashboardHeaderProps) {
+  const whisperCpp = transcription.engine === "whisperCpp";
   return (
     <section className="mb-4 flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
       <div>
@@ -52,6 +63,17 @@ export function DashboardHeader({
           disabled={isRecording}
           onRemoteConsentChange={onRemoteConsentChange}
         />
+        {whisperCpp && lastCompute ? (
+          <p
+            className="m-0 text-sm text-[#536158]"
+            role="status"
+            aria-label="Transcription device"
+            title={lastCompute.gpuUnavailableReason}
+          >
+            Transcription: <strong>{describeCompute(lastCompute)}</strong>
+            {lastCompute.gpuUnavailableReason ? " (GPU unavailable)" : ""}
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-3 max-sm:flex-col max-sm:items-stretch">
         <select
@@ -84,6 +106,20 @@ export function DashboardHeader({
             </option>
           ))}
         </select>
+        {whisperCpp ? (
+          <label
+            className="flex items-center gap-2 text-sm text-[#2d4e43]"
+            title="By default transcription uses the GPU when one is usable and falls back to the CPU"
+          >
+            <input
+              type="checkbox"
+              checked={transcription.device === "cpu"}
+              disabled={isRecording}
+              onChange={(event) => onDeviceChange(event.target.checked ? "cpu" : "auto")}
+            />
+            CPU only
+          </label>
+        ) : null}
         <select
           className={controlClass}
           value={language}

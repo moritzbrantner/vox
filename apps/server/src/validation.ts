@@ -168,7 +168,14 @@ export function validateTranscribeAudioRequest(
     provider: selectedProvider,
     model: requiredTrimmedString(body.model, "model"),
     language: optionalTrimmedString(body.language, "language"),
+    device: devicePreference(body.device),
   };
+}
+
+function devicePreference(value: unknown): "auto" | "cpu" {
+  if (value === undefined || value === "auto") return "auto";
+  if (value === "cpu") return "cpu";
+  throw invalid("device must be auto or cpu");
 }
 
 export function validateTranscribeAudioFileForm(formData: ServerFormData) {

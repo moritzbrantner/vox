@@ -161,6 +161,10 @@ bun run artifacts:download -- small.en
 
 `bun run artifacts:download` is idempotent and defaults to `base.en`. Use `bun run artifacts:download:all` only when you intentionally want every supported whisper.cpp model cached locally.
 
+### GPU transcription
+
+The whisper.cpp engine uses the GPU when one is usable and falls back to the CPU. The GPU path runs the [native-whisperx](https://github.com/moritzbrantner/native-whisperx) CLI on CUDA (`STUTTER_NATIVE_WHISPERX_BIN`, else `native-whisperx` on `PATH`, built with `--features cuda`); it fetches the same Whisper checkpoint from Hugging Face. When the binary is missing, has no CUDA, or finds no GPU, transcription runs on whisper.cpp on the CPU, and the reason is logged. **CPU only** in the header turns the GPU path off. The backend and device of each transcript are recorded in its provenance and shown in the header and the transcript revisions panel. Only NVIDIA GPUs are used for now: native-whisperx has no Vulkan or Metal backend, and whisper.cpp in audio-analysis is built for the CPU. The compute server's worker follows the same rules.
+
 ## Notes
 
 The app tracks speech patterns for personal review and is not a diagnostic tool.
