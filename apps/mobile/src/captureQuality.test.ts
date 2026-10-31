@@ -266,11 +266,19 @@ describe("mobile capture path end to end", () => {
 });
 
 describe("mobile recordings of other people", () => {
-  it("stores this session's agreement confirmation with the recording only when given", () => {
-    const confirmation = {
-      confirmedAt: "2026-10-31T10:00:00.000Z",
-      statement: "Everyone else in this recording has agreed to be recorded.",
-    };
+  it("stores each participant's confirmation with the recording only when given", () => {
+    const confirmation = [
+      {
+        label: "Robin",
+        confirmedAt: "2026-10-31T10:00:00.000Z",
+        statement: "Robin has agreed to be recorded.",
+      },
+      {
+        label: "Sam",
+        confirmedAt: "2026-10-31T10:01:00.000Z",
+        statement: "Sam has agreed to be recorded.",
+      },
+    ];
     const input = { sessionId: "c", runId: "r", sampleRate: SOURCE_RATE, channelCount: 1 };
     expect(
       mobileRecordingDescriptor({ ...input, soloSpeaker: false, otherParticipants: confirmation })

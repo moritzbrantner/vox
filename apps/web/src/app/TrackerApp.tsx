@@ -94,9 +94,11 @@ export function App() {
     soloSpeakerRef,
     setSoloSpeaker,
     othersRecorded,
-    othersAgreed,
-    setOthersAgreed,
     setOthersRecorded,
+    participants,
+    addParticipant,
+    confirmParticipant,
+    removeParticipant,
   } = useRecordingConsent({ isRecording });
   const {
     sessions,
@@ -277,7 +279,7 @@ export function App() {
     isRecordingRef,
     soloSpeakerRef,
     othersRecorded,
-    othersAgreed,
+    participants,
     setSpeakerMatch,
     speakersRef,
     speakerMatchRef,
@@ -493,8 +495,10 @@ export function App() {
         onSoloSpeakerChange={setSoloSpeaker}
         othersRecorded={othersRecorded}
         onOthersRecordedChange={setOthersRecorded}
-        othersAgreed={othersAgreed}
-        onOthersAgreedChange={setOthersAgreed}
+        participants={participants}
+        onParticipantAdd={addParticipant}
+        onParticipantConfirm={confirmParticipant}
+        onParticipantRemove={removeParticipant}
       />
 
       <StorageProtectionNotice />

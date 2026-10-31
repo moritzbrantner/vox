@@ -2,7 +2,7 @@
 // app: chosen sessions, with transcripts, speaker names and other speakers' words under their
 // control. Voiceprints, audio, device routes and the app's severity label are never exported.
 import { captureCoverageNote, type CaptureCoverage, type RunCaptureQuality } from "./capture";
-import { describeParticipants, sessionParticipantsConfirmation } from "./consent";
+import { describeParticipants, sessionParticipants } from "./consent";
 import type { StutterKind } from "./index";
 import {
   acceptedAnnotation,
@@ -14,8 +14,11 @@ import {
 } from "./sessions";
 
 export const EVIDENCE_EXPORT_SCHEMA = "vox-evidence-export";
-/** 3: every session states whether it recorded other people and when their agreement was confirmed. */
-export const EVIDENCE_EXPORT_VERSION = 3;
+/**
+ * 3: every session states whether it recorded other people and when their agreement was confirmed.
+ * 4: that agreement is listed per participant, each with its own confirmation time.
+ */
+export const EVIDENCE_EXPORT_VERSION = 4;
 
 /** Segments without a speaker id are grouped under this key in speaker selections. */
 export const UNATTRIBUTED_SPEAKER = "unattributed";
@@ -48,11 +51,14 @@ export type EvidenceSession = {
     /** Aid settings as recorded (e.g. delay), so different settings stay distinguishable. */
     aidSettings: Record<string, number | string | boolean> | null;
   };
-  /** Whether the session knowingly recorded other people, and the user's confirmation that they agreed. */
+  /** Whether the session knowingly recorded other people, and the user's confirmation for each. */
   participants: {
     othersRecorded: boolean;
-    /** When the user confirmed everyone else agreed; null when no one else was declared. */
-    agreementConfirmedAt: string | null;
+    /**
+     * One entry per listed person and when their agreement was confirmed; empty when no one else
+     * was declared. Labels become "Participant 1", … unless speaker names are included.
+     */
+    confirmations: { label: string; confirmedAt: string }[];
   };
   sample: {
     /** The denominator behind per-minute rates, in seconds. */
@@ -214,6 +220,8 @@ export function buildEvidenceExport(
   // only some segments is not split into two.
   const labels = speakerLabels(selected, options.includeSpeakerNames);
   const speakerName = (id: string) => labels.get(id) ?? "Unattributed";
+  // Participant labels are names too, so they leave only when speaker names do.
+  const speakerNames = options.includeTranscripts && options.includeSpeakerNames;
   return {
     schema: EVIDENCE_EXPORT_SCHEMA,
     version: EVIDENCE_EXPORT_VERSION,
@@ -221,7 +229,7 @@ export function buildEvidenceExport(
     notice: EVIDENCE_EXPORT_NOTICE,
     included: {
       transcripts: options.includeTranscripts,
-      speakerNames: options.includeTranscripts && options.includeSpeakerNames,
+      speakerNames,
       transcriptSpeakers: !options.includeTranscripts
         ? null
         : options.transcriptSpeakers === "all"
@@ -233,7 +241,7 @@ export function buildEvidenceExport(
       const seconds = round(Math.max(0, session.report.totalDurationSeconds));
       const condition = session.context.condition;
       const reference = acceptedAnnotation(session);
-      const participants = sessionParticipantsConfirmation(session);
+      const participants = sessionParticipants(session) ?? [];
       const evidence: EvidenceSession = {
         ref: `S${index + 1}`,
         startedAt: session.startedAt,
@@ -247,8 +255,11 @@ export function buildEvidenceExport(
           aidSettings: condition?.kind === "assisted" ? { ...(condition.settings ?? {}) } : null,
         },
         participants: {
-          othersRecorded: participants !== null,
-          agreementConfirmedAt: participants?.confirmedAt ?? null,
+          othersRecorded: participants.length > 0,
+          confirmations: participants.map((participant, position) => ({
+            label: speakerNames ? participant.label : `Participant ${position + 1}`,
+            confirmedAt: participant.confirmedAt,
+          })),
         },
         sample: { durationSeconds: seconds, wordCount: session.report.wordCount },
         captureQuality: evidenceCaptureQuality(session.report.captureQuality),
@@ -317,7 +328,7 @@ export function renderEvidenceReport(evidence: EvidencePackage): string {
       "",
       `${session.ref} · ${oneLine(session.startedAt)}`,
       `  Context: language ${oneLine(session.context.spokenLanguage)}; task ${oneLine(describeTask(session.context))}; condition ${oneLine(describeCondition(session.context))}`,
-      `  Participants: ${oneLine(describeParticipants(session.participants.agreementConfirmedAt))}`,
+      `  Participants: ${oneLine(describeParticipants(session.participants.confirmations))}`,
       `  Sample: ${session.sample.durationSeconds} s, ${session.sample.wordCount} words`,
       `  Capture quality: ${describeCaptureQuality(session.captureQuality)}`,
       session.captureQuality.state === "unknown"

@@ -1,13 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  addParticipant,
   canStartWithParticipants,
+  confirmParticipant,
   CONSENT_PURPOSES,
   type ConsentDecision,
-  isOtherParticipantsConfirmation,
-  OTHER_PARTICIPANTS_STATEMENT,
+  describeParticipants,
+  LEGACY_PARTICIPANTS_LABEL,
+  migrateRecordingParticipants,
+  parseOtherParticipants,
   participantsConfirmationForStart,
-  sessionParticipantsConfirmation,
+  removeParticipant,
+  sessionParticipants,
   ConsentRequiredError,
   currentConsent,
   EMPTY_CONSENT_LEDGER,
@@ -131,40 +136,101 @@ describe("consent ledger", () => {
 });
 
 describe("recording other participants", () => {
-  const at = new Date("2026-10-31T10:00:00.000Z");
+  const robinAt = new Date("2026-10-31T10:00:00.000Z");
+  const samAt = new Date("2026-10-31T10:01:00.000Z");
 
   test("recording only the user needs no confirmation and stores none", () => {
-    const solo = { othersRecorded: false, othersAgreed: false };
+    const solo = { othersRecorded: false, participants: [] };
     expect(canStartWithParticipants(solo)).toBe(true);
-    expect(participantsConfirmationForStart(solo, at)).toBeNull();
+    expect(participantsConfirmationForStart(solo)).toBeNull();
   });
 
-  test("a session that records others cannot start until the user confirms", () => {
-    const unconfirmed = { othersRecorded: true, othersAgreed: false };
-    expect(canStartWithParticipants(unconfirmed)).toBe(false);
-    expect(() => participantsConfirmationForStart(unconfirmed, at)).toThrow("has agreed");
+  test("recording others needs at least one listed participant", () => {
+    const nobody = { othersRecorded: true, participants: [] };
+    expect(canStartWithParticipants(nobody)).toBe(false);
+    expect(() => participantsConfirmationForStart(nobody)).toThrow("Add each other person");
   });
 
-  test("a confirmed start records when and what was confirmed", () => {
-    const confirmation = participantsConfirmationForStart(
-      { othersRecorded: true, othersAgreed: true },
-      at,
-    );
-    expect(confirmation).toEqual({
-      confirmedAt: "2026-10-31T10:00:00.000Z",
-      statement: OTHER_PARTICIPANTS_STATEMENT,
-    });
-    expect(isOtherParticipantsConfirmation(confirmation)).toBe(true);
+  test("every listed participant must be confirmed, and adding one re-blocks", () => {
+    let participants = addParticipant([], " Robin ", "p1");
+    expect(participants).toEqual([{ id: "p1", label: "Robin", confirmedAt: null }]);
+    expect(canStartWithParticipants({ othersRecorded: true, participants })).toBe(false);
+
+    participants = confirmParticipant(participants, "p1", true, robinAt);
+    expect(canStartWithParticipants({ othersRecorded: true, participants })).toBe(true);
+
+    participants = addParticipant(participants, "Sam", "p2");
+    expect(canStartWithParticipants({ othersRecorded: true, participants })).toBe(false);
+    participants = confirmParticipant(participants, "p2", true, samAt);
+    expect(canStartWithParticipants({ othersRecorded: true, participants })).toBe(true);
+
     expect(
-      sessionParticipantsConfirmation({ recordings: [{}, { otherParticipants: confirmation! }] }),
-    ).toBe(confirmation);
-    expect(sessionParticipantsConfirmation({ recordings: [{}] })).toBeNull();
+      canStartWithParticipants({
+        othersRecorded: true,
+        participants: confirmParticipant(participants, "p1", false),
+      }),
+    ).toBe(false);
+    expect(removeParticipant(participants, "p2").map((participant) => participant.id)).toEqual([
+      "p1",
+    ]);
+  });
+
+  test("ignores blank and already-listed labels", () => {
+    const participants = addParticipant([], "Robin", "p1");
+    expect(addParticipant(participants, "  ", "p2")).toEqual(participants);
+    expect(addParticipant(participants, "robin", "p2")).toEqual(participants);
+  });
+
+  test("a confirmed start stores each participant with their own confirmation time", () => {
+    let participants = addParticipant(addParticipant([], "Robin", "p1"), "Sam", "p2");
+    participants = confirmParticipant(participants, "p1", true, robinAt);
+    participants = confirmParticipant(participants, "p2", true, samAt);
+    const confirmations = participantsConfirmationForStart({ othersRecorded: true, participants });
+    expect(confirmations).toEqual([
+      {
+        label: "Robin",
+        confirmedAt: "2026-10-31T10:00:00.000Z",
+        statement: "Robin has agreed to be recorded.",
+      },
+      {
+        label: "Sam",
+        confirmedAt: "2026-10-31T10:01:00.000Z",
+        statement: "Sam has agreed to be recorded.",
+      },
+    ]);
+    expect(parseOtherParticipants(confirmations)).toEqual(confirmations!);
+    expect(sessionParticipants({ recordings: [{}, { otherParticipants: confirmations! }] })).toBe(
+      confirmations,
+    );
+    expect(sessionParticipants({ recordings: [{}] })).toBeNull();
+    expect(describeParticipants(confirmations)).toBe(
+      "Other people recorded: Robin (agreed 2026-10-31T10:00:00.000Z), Sam (agreed 2026-10-31T10:01:00.000Z)",
+    );
+    expect(describeParticipants(null)).toBe("No other people declared");
+  });
+
+  test("migrates a single pre-#151 confirmation to one legacy entry", () => {
+    const legacy = {
+      confirmedAt: "2026-10-30T09:00:00.000Z",
+      statement: "Everyone else in this recording has agreed to be recorded.",
+    };
+    const migrated = migrateRecordingParticipants({ runId: "r", otherParticipants: legacy });
+    expect(migrated.otherParticipants).toEqual([{ label: LEGACY_PARTICIPANTS_LABEL, ...legacy }]);
+    const current = { runId: "r", otherParticipants: migrated.otherParticipants };
+    expect(migrateRecordingParticipants(current)).toBe(current);
+    const bare: { runId: string; otherParticipants?: unknown } = { runId: "r" };
+    expect(migrateRecordingParticipants(bare) as unknown).toBe(bare);
   });
 
   test("rejects malformed stored confirmations", () => {
-    expect(isOtherParticipantsConfirmation({ confirmedAt: "never", statement: "x" })).toBe(false);
-    expect(isOtherParticipantsConfirmation({ confirmedAt: at.toISOString(), statement: "" })).toBe(
-      false,
-    );
+    const valid = { label: "Robin", confirmedAt: robinAt.toISOString(), statement: "x" };
+    expect(parseOtherParticipants([])).toBeNull();
+    expect(parseOtherParticipants([{ ...valid, label: " " }])).toBeNull();
+    expect(parseOtherParticipants([{ ...valid, confirmedAt: "never" }])).toBeNull();
+    expect(parseOtherParticipants([{ ...valid, statement: "" }])).toBeNull();
+    expect(parseOtherParticipants({ confirmedAt: "never", statement: "x" })).toBeNull();
+    expect(() =>
+      migrateRecordingParticipants({ otherParticipants: { confirmedAt: "never" } }),
+    ).toThrow("malformed");
   });
 });

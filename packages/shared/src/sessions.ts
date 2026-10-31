@@ -1,6 +1,7 @@
 // Canonical saved-session record: original observations, the analysis that interpreted them and
 // every superseded analysis stay distinct. A rerun appends; it never rewrites an earlier result.
 import type { RecordingDescriptor } from "./capture";
+import { migrateRecordingParticipants } from "./consent";
 import type {
   AnalysisReport,
   PauseSpan,
@@ -240,8 +241,12 @@ export function migrateSessionRecord(record: LegacySessionRecord | SessionRecord
     if (record.schemaVersion !== SESSION_SCHEMA_VERSION) {
       throw new Error(`Unsupported session schema version ${String(record.schemaVersion)}.`);
     }
-    // Version-2 records saved before annotations existed have none.
-    return record.annotations ? record : { ...record, annotations: [] };
+    // Version-2 records saved before annotations existed have none, and those saved before
+    // per-participant consent hold one confirmation for everyone else.
+    const recordings = record.recordings.map(migrateRecordingParticipants);
+    const changed = recordings.some((recording, index) => recording !== record.recordings[index]);
+    if (record.annotations && !changed) return record;
+    return { ...record, recordings, annotations: record.annotations ?? [] };
   }
   return {
     schemaVersion: SESSION_SCHEMA_VERSION,

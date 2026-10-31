@@ -1,14 +1,18 @@
 import { createComputeClient, processingPolicyForServerUrl } from "@stutter-tracker/compute-client";
 import {
+  addParticipant,
   type AnalysisReport,
   canStartWithParticipants,
+  confirmParticipant,
   type ConsentLedger,
+  type DeclaredParticipant,
   describeParticipants,
   EMPTY_CONSENT_LEDGER,
   OTHER_PARTICIPANTS_REQUIRED_MESSAGE,
-  OTHER_PARTICIPANTS_STATEMENT,
-  type OtherParticipantsConfirmation,
+  type ParticipantConfirmation,
+  participantStatement,
   participantsConfirmationForStart,
+  removeParticipant,
   type TranscriptionEngineId,
   type TranscriptionModelStatus,
 } from "@stutter-tracker/shared";
@@ -73,24 +77,23 @@ export default function App() {
   const [modelStatuses, setModelStatuses] = useState<TranscriptionModelStatus[]>([]);
   // "Only I speak": without it a result stays unknown, as on the web.
   const [soloSpeaker, setSoloSpeaker] = useState(false);
-  // Recording other people needs a confirmation made for this session (#66); the agreement is
-  // cleared whenever a recording ends, so it never carries over.
+  // Recording other people needs each listed person confirmed for this session (#66, #151); the
+  // list is cleared whenever a recording ends, so it never carries over.
   const [othersRecorded, setOthersRecorded] = useState(false);
-  const [othersAgreed, setOthersAgreed] = useState(false);
-  const [lastParticipants, setLastParticipants] = useState<OtherParticipantsConfirmation | null>(
-    null,
-  );
+  const [participants, setParticipants] = useState<DeclaredParticipant[]>([]);
+  const [participantLabel, setParticipantLabel] = useState("");
+  const [lastParticipants, setLastParticipants] = useState<ParticipantConfirmation[] | null>(null);
   const audioRecorder = useAudioRecorder(RECORDING_PRESET);
   const recorderState = useAudioRecorderState(audioRecorder);
   useEffect(() => {
-    if (!recorderState.isRecording) setOthersAgreed(false);
+    if (!recorderState.isRecording) setParticipants([]);
   }, [recorderState.isRecording]);
   // Start/stop/cancel go through one controller, so a late prepare or upload never attaches to
   // another capture.
   const recording = useMemo(() => createRecordingController(audioRecorder), [audioRecorder]);
   const captureRef = useRef<{
     soloSpeaker: boolean;
-    otherParticipants: OtherParticipantsConfirmation | null;
+    otherParticipants: ParticipantConfirmation[] | null;
   } | null>(null);
   useEffect(() => {
     return () => {
@@ -179,9 +182,9 @@ export default function App() {
       setStatus("Microphone permission was denied");
       return;
     }
-    // A session that records other people does not start without this session's confirmation.
-    const participants = { othersRecorded, othersAgreed };
-    if (!canStartWithParticipants(participants)) {
+    // A session that records other people starts only once each listed person is confirmed.
+    const declared = { othersRecorded, participants };
+    if (!canStartWithParticipants(declared)) {
       setStatus(OTHER_PARTICIPANTS_REQUIRED_MESSAGE);
       return;
     }
@@ -192,7 +195,7 @@ export default function App() {
     // The declaration applies to the recording it was made for.
     const declaration = {
       soloSpeaker: soloSpeaker && !othersRecorded,
-      otherParticipants: participantsConfirmationForStart(participants),
+      otherParticipants: participantsConfirmationForStart(declared),
     };
     try {
       const captureId = await recording.start();
@@ -235,7 +238,7 @@ export default function App() {
     uri: string,
     captureSeconds: number,
     declaredSolo: boolean,
-    otherParticipants: OtherParticipantsConfirmation | null,
+    otherParticipants: ParticipantConfirmation[] | null,
   ) {
     // Results of a cancelled or superseded capture are dropped.
     const isCurrent = () => recording.isCurrent(captureId);
@@ -374,7 +377,7 @@ export default function App() {
                 setSoloSpeaker(declared);
                 if (declared) {
                   setOthersRecorded(false);
-                  setOthersAgreed(false);
+                  setParticipants([]);
                 }
               }}
               disabled={busy}
@@ -387,22 +390,62 @@ export default function App() {
               value={othersRecorded}
               onValueChange={(declared) => {
                 setOthersRecorded(declared);
-                setOthersAgreed(false);
+                setParticipants([]);
                 if (declared) setSoloSpeaker(false);
               }}
               disabled={busy}
               accessibilityLabel="Recording other people"
             />
           </View>
+          {othersRecorded &&
+            participants.map((participant) => (
+              <View key={participant.id} style={styles.toggleRow}>
+                <Text style={[styles.label, styles.toggleText]}>
+                  {participantStatement(participant.label)}
+                </Text>
+                <Switch
+                  value={participant.confirmedAt !== null}
+                  onValueChange={(confirmed) =>
+                    setParticipants((current) =>
+                      confirmParticipant(current, participant.id, confirmed),
+                    )
+                  }
+                  disabled={busy}
+                  accessibilityLabel={participantStatement(participant.label)}
+                />
+                <TouchableOpacity
+                  onPress={() =>
+                    setParticipants((current) => removeParticipant(current, participant.id))
+                  }
+                  disabled={busy}
+                  accessibilityLabel={`Remove ${participant.label}`}
+                >
+                  <Text style={styles.buttonText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           {othersRecorded && (
             <View style={styles.toggleRow}>
-              <Text style={[styles.label, styles.toggleText]}>{OTHER_PARTICIPANTS_STATEMENT}</Text>
-              <Switch
-                value={othersAgreed}
-                onValueChange={setOthersAgreed}
-                disabled={busy}
-                accessibilityLabel={OTHER_PARTICIPANTS_STATEMENT}
+              <TextInput
+                value={participantLabel}
+                onChangeText={setParticipantLabel}
+                placeholder="Name or label"
+                accessibilityLabel="Other participant's name or label"
+                editable={!busy}
+                style={[styles.input, styles.toggleText]}
               />
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => {
+                  setParticipants((current) =>
+                    addParticipant(current, participantLabel, `${Date.now()}-${current.length}`),
+                  );
+                  setParticipantLabel("");
+                }}
+                disabled={busy || !participantLabel.trim()}
+              >
+                <Text style={styles.buttonText}>Add person</Text>
+              </TouchableOpacity>
             </View>
           )}
           <TouchableOpacity
@@ -413,7 +456,7 @@ export default function App() {
               permissionGranted === false ||
               (!recorderState.isRecording &&
                 (destination.kind !== "server" ||
-                  !canStartWithParticipants({ othersRecorded, othersAgreed })))
+                  !canStartWithParticipants({ othersRecorded, participants })))
             }
           >
             <Text style={styles.primaryButtonText}>
@@ -433,9 +476,7 @@ export default function App() {
           )}
           {lastParticipants && (
             <Text style={styles.detail}>
-              {describeParticipants(lastParticipants.confirmedAt, (iso) =>
-                new Date(iso).toLocaleString(),
-              )}
+              {describeParticipants(lastParticipants, (iso) => new Date(iso).toLocaleString())}
             </Text>
           )}
           <Text style={styles.transcript}>{transcript || "Transcript will appear here."}</Text>

@@ -1,7 +1,7 @@
 import {
   type LegacySessionRecord,
   migrateSessionRecord,
-  isOtherParticipantsConfirmation,
+  parseOtherParticipants,
   isRunCaptureQuality,
   isVoiceActivityEvidence,
   SESSION_SCHEMA_VERSION,
@@ -357,8 +357,9 @@ export function isRecordingDescriptor(value: unknown) {
     (value.speakerAssessment === "singleSpeakerDeclared" ||
       value.speakerAssessment === "unknown" ||
       value.speakerAssessment === "overlapDetected") &&
+    // A single confirmation saved before per-participant consent is migrated on read.
     (value.otherParticipants === undefined ||
-      isOtherParticipantsConfirmation(value.otherParticipants))
+      parseOtherParticipants(value.otherParticipants) !== null)
   );
 }
 

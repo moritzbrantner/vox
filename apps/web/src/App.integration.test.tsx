@@ -1364,21 +1364,38 @@ describe("capture-quality gate", () => {
     });
   });
 
-  it("starts a session with other people only after this session's confirmation", async () => {
+  it("starts a session with other people only after each one is confirmed", async () => {
     const { record } = await recordWithNativeMetrics(measured());
     renderApp();
     const recordButton = () => screen.getByRole("button", { name: /^record$/i });
-    const agreement = "Everyone else in this recording has agreed to be recorded.";
+    const addPerson = async (label: string) => {
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Other participant's name or label" }),
+        label,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Add person" }));
+    };
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Recording other people" }));
     expect(recordButton()).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: agreement }));
+    await addPerson("Robin");
+    expect(recordButton()).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Robin has agreed to be recorded." }),
+    );
+    expect(recordButton()).toBeEnabled();
+    // Adding someone mid-setup blocks Record again until they are confirmed too.
+    await addPerson("Sam");
+    expect(recordButton()).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Sam has agreed to be recorded." }));
     expect(recordButton()).toBeEnabled();
     await record();
 
-    // The confirmation covered that session only; the next one needs it again.
+    // The confirmations covered that session only; the list is cleared for the next one.
     await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: agreement })).not.toBeChecked(),
+      expect(
+        screen.queryByRole("checkbox", { name: "Robin has agreed to be recorded." }),
+      ).not.toBeInTheDocument(),
     );
     expect(recordButton()).toBeDisabled();
 
@@ -1390,14 +1407,22 @@ describe("capture-quality gate", () => {
     expect(saved.recordings).toEqual([
       expect.objectContaining({
         speakerAssessment: "unknown",
-        otherParticipants: {
-          confirmedAt: expect.any(String),
-          statement: agreement,
-        },
+        otherParticipants: [
+          {
+            label: "Robin",
+            confirmedAt: expect.any(String),
+            statement: "Robin has agreed to be recorded.",
+          },
+          {
+            label: "Sam",
+            confirmedAt: expect.any(String),
+            statement: "Sam has agreed to be recorded.",
+          },
+        ],
       }),
     ]);
     expect(
-      await screen.findByText(/Other people recorded; their agreement confirmed/),
+      await screen.findByText(/Other people recorded: Robin \(agreed .+\), Sam \(agreed .+\)/),
     ).toBeInTheDocument();
   });
 

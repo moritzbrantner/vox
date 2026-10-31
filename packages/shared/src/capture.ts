@@ -1,6 +1,6 @@
 // Recording descriptor, common session time base and capture-quality state.
 // Platform adapters fill the descriptor with what they can actually observe; unknown stays unknown.
-import type { OtherParticipantsConfirmation } from "./consent";
+import type { ParticipantConfirmation } from "./consent";
 
 export type CaptureOrigin = "browser" | "mobile" | "desktop" | "import";
 
@@ -46,10 +46,10 @@ export type RecordingDescriptor = {
   /** Mixed speakers are never attributed to the user by default. */
   speakerAssessment: "singleSpeakerDeclared" | "unknown" | "overlapDetected";
   /**
-   * Set when this capture knowingly recorded other people: the user's confirmation, made for this
-   * session before it started, that everyone else agreed (see `participantsConfirmationForStart`).
+   * Set when this capture knowingly recorded other people: one confirmation per listed person,
+   * made for this session before it started (see `participantsConfirmationForStart`).
    */
-  otherParticipants?: OtherParticipantsConfirmation;
+  otherParticipants?: ParticipantConfirmation[];
 };
 
 /**
