@@ -1,39 +1,19 @@
 import {
+  type AnalyzerIdentity,
+  AnalysisStreamHost,
   LIVE_ANALYSIS_SCHEMA_VERSION,
   type LiveAnalysisEvidence,
-  type LiveAnalysisParity,
   type LiveAnalysisStatus,
-  type LiveAnalysisWork,
+  SHARED_ANALYSIS_VERSION,
+  type StreamFinished,
+  type StreamUpdate,
 } from "@stutter-tracker/shared";
 import { invoke } from "@tauri-apps/api/core";
 import { useRef, useState } from "react";
 import type { AnalysisReport, PauseSpan, TranscriptSegment } from "../../types";
 import { isDesktopApp } from "../config";
 
-/** The incremental analysis runs in the desktop app; elsewhere every update is a batch run. */
-export const STREAM_UNAVAILABLE_OFF_DESKTOP =
-  "Incremental analysis while recording runs only in the desktop app.";
-
-type StreamUpdate = {
-  runId: string;
-  seq: number;
-  status: "live" | "interrupted" | "overloaded";
-  reason?: string;
-  changed: boolean;
-  report?: AnalysisReport & { analyzerVersion?: string };
-  work: LiveAnalysisWork;
-  processingMs: number;
-};
-
-type StreamFinished = {
-  runId: string;
-  status: "live" | "interrupted" | "overloaded";
-  reason?: string;
-  parity: LiveAnalysisParity;
-  work: LiveAnalysisWork;
-  maxUpdateMs: number;
-  oracleMs: number;
-};
+type StreamReport = AnalysisReport & { analyzerVersion?: string };
 
 type Observation = { segments: TranscriptSegment[]; pauses: PauseSpan[] };
 
@@ -52,20 +32,57 @@ type Run = {
   finished: boolean;
   coalescedChanges: number;
   maxStalenessMs: number;
-  onReport: (report: AnalysisReport & { analyzerVersion?: string }) => void;
+  onReport: (report: StreamReport, analyzer: AnalyzerIdentity) => void;
 };
 
+/**
+ * Where the stream runs: the desktop app's Rust stream (vox#38) behind its commands, or this
+ * device's shared stream (vox#154) behind the same commands. Both are exact against their batch.
+ */
 export type AnalysisStreamApi = {
   invoke: <T>(command: string, args: Record<string, unknown>) => Promise<T>;
-  isDesktop: () => boolean;
+  /** Who produced a stream report. */
+  analyzer: (report: StreamReport) => AnalyzerIdentity;
   now: () => number;
 };
 
-const defaultApi: AnalysisStreamApi = {
+const desktopApi: AnalysisStreamApi = {
   invoke: (command, args) => invoke(command, args),
-  isDesktop: isDesktopApp,
+  analyzer: (report) => ({
+    producer: "desktopNative",
+    algorithm: "analysis_stream",
+    version: report.analyzerVersion ?? null,
+  }),
   now: () => performance.now(),
 };
+
+/** The shared stream in this page, answering the desktop's stream commands. */
+export function onDeviceStreamApi(): AnalysisStreamApi {
+  const host = new AnalysisStreamHost();
+  return {
+    async invoke<T>(command: string, args: Record<string, unknown>) {
+      const request = args.request as never;
+      switch (command) {
+        case "analysis_stream_start":
+          return host.start(request) as T;
+        case "analysis_stream_push":
+          return host.push(request) as T;
+        case "analysis_stream_finish":
+          return host.finish(request) as T;
+        default:
+          throw new Error(`unknown analysis stream command ${command}`);
+      }
+    },
+    analyzer: () => ({
+      producer: "onDevice",
+      algorithm: "analysis_stream",
+      version: SHARED_ANALYSIS_VERSION,
+    }),
+    now: () => performance.now(),
+  };
+}
+
+const defaultApi = () => (isDesktopApp() ? desktopApi : onDeviceStreamApi());
 
 /** Length of the common prefix; observations are immutable, so identity means unchanged. */
 function unchangedPrefix<T>(held: T[], next: T[]) {
@@ -76,13 +93,18 @@ function unchangedPrefix<T>(held: T[], next: T[]) {
 }
 
 /**
- * Incremental analysis of one capture at a time (vox#38): while recording, only what changed in
- * the transcript and pauses is sent to the desktop stream, one update in flight and later
- * changes coalesced into the next. After Stop, `finish` compares the stream's report with the
- * batch analysis of the final observation and returns the evidence saved with the session.
- * Updates of an older capture never reach a newer one.
+ * Incremental analysis of one capture at a time (vox#38, vox#154): while recording, only what
+ * changed in the transcript and pauses is sent to the stream (the desktop's, or this device's
+ * elsewhere), one update in flight and later changes coalesced into the next. After Stop,
+ * `finish` compares the stream's report with the batch analysis of the final observation and
+ * returns the evidence saved with the session. Updates of an older capture never reach a newer
+ * one.
  */
-export function useAnalysisStream(api: AnalysisStreamApi = defaultApi) {
+export function useAnalysisStream(apiOverride?: AnalysisStreamApi) {
+  // One stream host for the life of the page: its active run is the session being recorded.
+  const apiRef = useRef<AnalysisStreamApi | null>(null);
+  apiRef.current ??= apiOverride ?? defaultApi();
+  const api = apiRef.current;
   const runRef = useRef<Run | null>(null);
   const evidenceRef = useRef<LiveAnalysisEvidence | null>(null);
   // Whether the live report comes from the stream; the batch analysis waits until it does not.
@@ -97,7 +119,7 @@ export function useAnalysisStream(api: AnalysisStreamApi = defaultApi) {
   function start(
     runId: string,
     sessionStartedAt: string,
-    onReport: (report: AnalysisReport & { analyzerVersion?: string }) => void,
+    onReport: (report: StreamReport, analyzer: AnalyzerIdentity) => void,
   ) {
     evidenceRef.current = null;
     const run: Run = {
@@ -115,10 +137,6 @@ export function useAnalysisStream(api: AnalysisStreamApi = defaultApi) {
       onReport,
     };
     runRef.current = run;
-    if (!api.isDesktop()) {
-      setStatus(run, "unavailable", STREAM_UNAVAILABLE_OFF_DESKTOP);
-      return;
-    }
     setLive(true);
     run.chain = api
       .invoke<void>("analysis_stream_start", { request: { runId, sessionStartedAt } })
@@ -171,13 +189,15 @@ export function useAnalysisStream(api: AnalysisStreamApi = defaultApi) {
       if (runRef.current !== run || update.runId !== run.runId) return;
       run.maxStalenessMs = Math.max(run.maxStalenessMs, api.now() - next.since);
       if (update.status === "interrupted") {
-        // The desktop no longer holds what this client sent: the next update starts over.
+        // The stream no longer holds what this client sent: the next update starts over.
         run.sent = { segments: [], pauses: [] };
       } else if (update.status === "live") {
         run.sent = { segments: next.segments, pauses: next.pauses };
       }
       setStatus(run, update.status, update.reason);
-      if (update.status === "live" && update.report && !run.finished) run.onReport(update.report);
+      if (update.status === "live" && update.report && !run.finished) {
+        run.onReport(update.report, api.analyzer(update.report));
+      }
     } catch (error) {
       setStatus(run, "failed", String(error));
     }
@@ -214,7 +234,7 @@ export function useAnalysisStream(api: AnalysisStreamApi = defaultApi) {
       captureRunId: run.runId,
       queue: { coalescedChanges: run.coalescedChanges, maxStalenessMs: run.maxStalenessMs },
     } as const;
-    if (run.status === "unavailable" || run.status === "failed") {
+    if (run.status === "failed") {
       const evidence: LiveAnalysisEvidence = {
         ...base,
         finishedAt: new Date().toISOString(),

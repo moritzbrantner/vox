@@ -18,6 +18,7 @@
     "test": "bun run test:unit",
     "test:unit": "bun test src",
     "bench:audio-fingerprint": "bun scripts/bench-audio-fingerprint.ts",
+    "bench:live-analysis-uclass": "bun scripts/live-analysis-uclass.ts",
     "format": "oxfmt --write \"src/**/*.{ts,tsx}\"",
     "format:check": "oxfmt --check \"src/**/*.{ts,tsx}\""
   },

@@ -572,7 +572,8 @@ export function App() {
               ? setKeepAudio
               : undefined
           }
-          saveDisabled={captureInProgress || isAnalyzing}
+          // A live stream report is provisional: saving waits for the batch run after Stop.
+          saveDisabled={captureInProgress || isAnalyzing || analysisStream.live}
           storageWarning={checkpointError ?? claimError}
           onExport={() => setExportDialogOpen(true)}
           savedSessionCount={sessions.length}

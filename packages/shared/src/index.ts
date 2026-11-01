@@ -1,4 +1,23 @@
 import { ANALYSIS_CAPABILITIES } from "./analysisCapabilities";
+import {
+  buildBlockerStats,
+  chunkWordsPerMinute,
+  classifySeverity,
+  countedWords,
+  event,
+  eventAppliesToSegment,
+  isFiller,
+  isNearDuplicate,
+  meanFinite,
+  normalize,
+  overlaps,
+  pauseBlock,
+  pauseOverlapSeconds,
+  segmentEvents,
+  segmentWords,
+  spanSeconds,
+  speechStatsFromTotals,
+} from "./fallbackDetectors";
 
 export type TranscriptSegment = {
   text: string;
@@ -425,56 +444,15 @@ export function fallbackAnalyze(
   let wordCount = 0;
   let duration = 0;
   for (const segment of request.segments.filter((item) => item.isFinal)) {
-    const words = segment.text.split(/\s+/).filter(Boolean);
-    wordCount += words.filter((word) => !isFiller(normalize(word))).length;
+    const words = segmentWords(segment);
+    wordCount += countedWords(words);
     duration = Math.max(duration, segment.endSeconds);
-    const step = Math.max(
-      0.1,
-      (segment.endSeconds - segment.startSeconds) / Math.max(1, words.length),
-    );
-    for (let index = 0; index < words.length; index += 1) {
-      const word = normalize(words[index]);
-      const next = normalize(words[index + 1] ?? "");
-      const start = segment.startSeconds + step * index;
-      if (word && word === next && !isFiller(word)) {
-        transcriptEvents.push(
-          event(
-            "wordRepetition",
-            start,
-            start + step * 2,
-            `${words[index]} ${words[index + 1]}`,
-            "Repeated word sequence",
-            0.78,
-          ),
-        );
-      }
-      // An unaligned segment has no timing to place a prolongation in; none is invented.
-      if (longestRun(word) >= 4 && segment.alignment !== "unaligned") {
-        transcriptEvents.push(
-          event("prolongation", start, start + step, words[index], "Extended sound in word", 0.74),
-        );
-      }
-      if (isFiller(word)) {
-        transcriptEvents.push(
-          event("filler", start, start + step, words[index], "Filler or restart marker", 0.58),
-        );
-      }
-    }
+    for (const item of segmentEvents(segment, words)) transcriptEvents.push(item);
   }
   for (const pause of request.pauses) {
     duration = Math.max(duration, pause.endSeconds);
-    if (pause.endSeconds - pause.startSeconds >= 0.75) {
-      transcriptEvents.push(
-        event(
-          "block",
-          pause.startSeconds,
-          pause.endSeconds,
-          pause.afterText ?? "pause",
-          `${(pause.endSeconds - pause.startSeconds).toFixed(1)}s silent pause before speech`,
-          0.62,
-        ),
-      );
-    }
+    const block = pauseBlock(pause);
+    if (block) transcriptEvents.push(block);
   }
   const acoustic = analyzeAcoustics(request);
   if (acoustic) {
@@ -488,30 +466,23 @@ export function fallbackAnalyze(
     .map((candidate): PossibleEvent => ({ reason: "audioOnly", candidate }));
   const minutes = Math.max(duration / 60, 1 / 60);
   const rate = events.length / minutes;
-  const density = wordCount ? events.length / wordCount : 0;
   const finalSegments = request.segments.filter((item) => item.isFinal);
   const speakingDurationSeconds = finalSegments.reduce(
-    (sum, segment) => sum + Math.max(0, segment.endSeconds - segment.startSeconds),
+    (sum, segment) => sum + spanSeconds(segment),
     0,
   );
+  const pauseDurationSeconds = request.pauses.reduce((sum, pause) => sum + spanSeconds(pause), 0);
   return {
     sessionStartedAt: request.sessionStartedAt,
     totalDurationSeconds: duration,
     wordCount,
     stutterCount: events.length,
     stuttersPerMinute: rate,
-    severity:
-      events.length === 0
-        ? "none"
-        : rate >= 12 || density >= 0.18
-          ? "high"
-          : rate >= 6 || density >= 0.1
-            ? "moderate"
-            : "mild",
-    speechStats: buildSpeechStats(
+    severity: classifySeverity(events.length, rate, wordCount),
+    speechStats: speechStatsFromTotals(
       duration,
       speakingDurationSeconds,
-      request.pauses,
+      pauseDurationSeconds,
       wordCount,
       events.length,
       finalSegments.length,
@@ -553,60 +524,14 @@ function emptyBlockerStats(): BlockerStats {
   };
 }
 
-function buildSpeechStats(
-  totalDurationSeconds: number,
-  speakingDurationSeconds: number,
-  pauses: PauseSpan[],
-  wordCount: number,
-  stutterCount: number,
-  chunkCount: number,
-): SpeechStats {
-  const pauseDurationSeconds = pauses.reduce(
-    (sum, pause) => sum + Math.max(0, pause.endSeconds - pause.startSeconds),
-    0,
-  );
-  const minutes = Math.max(totalDurationSeconds / 60, 1 / 60);
-  const speakingMinutes = Math.max(speakingDurationSeconds / 60, 1 / 60);
-  const eventDensityPer100Words = wordCount ? (stutterCount / wordCount) * 100 : 0;
-  return {
-    speakingDurationSeconds,
-    pauseDurationSeconds,
-    wordsPerMinute: wordCount / minutes,
-    articulationRateWpm: wordCount / speakingMinutes,
-    meanChunkWords: chunkCount ? wordCount / chunkCount : 0,
-    meanChunkDurationSeconds: chunkCount ? speakingDurationSeconds / chunkCount : 0,
-    eventDensityPer100Words,
-    fluencyPercentage: wordCount ? Math.max(0, Math.min(100, 100 - eventDensityPer100Words)) : 100,
-  };
-}
-
-function buildBlockerStats(events: StutterEvent[], totalDurationSeconds: number): BlockerStats {
-  const blockDurations = events
-    .filter((event) => event.kind === "block")
-    .map((event) => Math.max(0, event.endSeconds - event.startSeconds));
-  const totalBlockSeconds = blockDurations.reduce((sum, value) => sum + value, 0);
-  const minutes = Math.max(totalDurationSeconds / 60, 1 / 60);
-  return {
-    blockCount: blockDurations.length,
-    totalBlockSeconds,
-    averageBlockSeconds: blockDurations.length ? totalBlockSeconds / blockDurations.length : 0,
-    longestBlockSeconds: Math.max(0, ...blockDurations),
-    blocksPerMinute: blockDurations.length / minutes,
-    blockedTimePercentage: totalDurationSeconds
-      ? (totalBlockSeconds / totalDurationSeconds) * 100
-      : 0,
-  };
-}
-
 function buildChunkAnalysis(
   segments: TranscriptSegment[],
   pauses: PauseSpan[],
   events: StutterEvent[],
 ): ChunkAnalysis[] {
   return segments.map((segment, index) => {
-    const words = segment.text.split(/\s+/).filter(Boolean);
-    const wordCount = words.filter((word) => !isFiller(normalize(word))).length;
-    const durationSeconds = Math.max(0, segment.endSeconds - segment.startSeconds);
+    const wordCount = countedWords(segmentWords(segment));
+    const durationSeconds = spanSeconds(segment);
     const chunkEvents = events.filter((eventItem) => eventAppliesToSegment(eventItem, segment));
     return {
       index,
@@ -618,43 +543,14 @@ function buildChunkAnalysis(
       stutterCount: chunkEvents.length,
       blockCount: chunkEvents.filter((eventItem) => eventItem.kind === "block").length,
       fillerCount: chunkEvents.filter((eventItem) => eventItem.kind === "filler").length,
-      wordsPerMinute: wordCount / Math.max(durationSeconds / 60, 1 / 60),
+      wordsPerMinute: chunkWordsPerMinute(wordCount, durationSeconds),
       silentPauseSeconds: pauses.reduce(
-        (sum, pause) =>
-          sum +
-          Math.max(
-            0,
-            Math.min(pause.endSeconds, segment.endSeconds) -
-              Math.max(pause.startSeconds, segment.startSeconds),
-          ),
+        (sum, pause) => sum + pauseOverlapSeconds(pause, segment),
         0,
       ),
       averageConfidence: meanFinite([segment.confidence, segment.speakerScore]),
     };
   });
-}
-
-function eventAppliesToSegment(eventItem: StutterEvent, segment: TranscriptSegment) {
-  return (
-    overlaps(
-      eventItem.startSeconds,
-      eventItem.endSeconds,
-      segment.startSeconds,
-      segment.endSeconds,
-    ) ||
-    (eventItem.kind === "block" &&
-      eventItem.endSeconds <= segment.startSeconds &&
-      segment.startSeconds - eventItem.endSeconds <= 1)
-  );
-}
-
-function overlaps(leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) {
-  return leftStart < rightEnd && rightStart < leftEnd;
-}
-
-function meanFinite(values: Array<number | undefined>) {
-  const finite = values.filter((value): value is number => Number.isFinite(value));
-  return finite.length ? finite.reduce((sum, value) => sum + value, 0) / finite.length : null;
 }
 
 type AcousticFrame = {
@@ -1122,15 +1018,7 @@ function fuseEvents(transcriptEvents: StutterEvent[], acousticEvents: StutterEve
   }
 
   fused.sort((left, right) => left.startSeconds - right.startSeconds);
-  return fused.filter((item, index, list) => {
-    const previous = list[index - 1];
-    return !(
-      previous &&
-      previous.kind === item.kind &&
-      Math.abs(previous.startSeconds - item.startSeconds) < 0.08 &&
-      previous.text === item.text
-    );
-  });
+  return fused.filter((item, index, list) => !isNearDuplicate(list[index - 1], item));
 }
 
 function passesAcousticThreshold(eventItem: StutterEvent) {
@@ -1249,39 +1137,8 @@ export function getTranscriptionEngine(id: TranscriptionEngineId) {
   return TRANSCRIPTION_ENGINES.find((engine) => engine.id === id) ?? TRANSCRIPTION_ENGINES[0];
 }
 
-function event(
-  kind: StutterKind,
-  startSeconds: number,
-  endSeconds: number,
-  text: string,
-  detail: string,
-  confidence: number,
-  source: StutterEvent["source"] = "transcript",
-  acousticEvidence?: AcousticEvidence,
-): StutterEvent {
-  return { kind, startSeconds, endSeconds, text, detail, confidence, source, acousticEvidence };
-}
-
-function normalize(value: string) {
-  return value.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
-}
-
-function isFiller(value: string) {
-  return ["um", "uh", "erm", "hm", "hmm", "like", "äh", "ähm", "eh"].includes(value);
-}
-
-function longestRun(value: string) {
-  let previous = "";
-  let current = 0;
-  let longest = 0;
-  for (const char of value) {
-    current = char === previous ? current + 1 : 1;
-    previous = char;
-    longest = Math.max(longest, current);
-  }
-  return longest;
-}
 export * from "./analysisCapabilities";
+export * from "./analysisStream";
 export * from "./capture";
 export * from "./outcomes";
 export * from "./sessions";
