@@ -14,6 +14,7 @@ mod stutter_bench;
 mod text_analysis_transcription;
 pub mod transcription;
 pub mod voice_activity;
+pub mod workflow_bench;
 
 // Local compatibility names keep product code stable while the historical
 // monolith package surfaces are mapped to their extracted capability owners.
