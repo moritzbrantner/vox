@@ -1,12 +1,18 @@
-import type { LiveAnalysisEvidence } from "@stutter-tracker/shared";
+import {
+  type AnalyzerIdentity,
+  type LiveAnalysisEvidence,
+  compareReports,
+  fallbackAnalyze,
+} from "@stutter-tracker/shared";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { emptyReport } from "./app/analysis";
 import {
   type AnalysisStreamApi,
-  STREAM_UNAVAILABLE_OFF_DESKTOP,
+  onDeviceStreamApi,
   useAnalysisStream,
 } from "./app/hooks/useAnalysisStream";
+import type { AnalysisReport } from "./types";
 import { isAnalysisReport } from "./storage/sessionBackup";
 import type { PauseSpan, TranscriptSegment } from "./types";
 
@@ -50,7 +56,7 @@ function fakeDesktop(options: { pushDelayMs?: number; interruptSeq?: number } = 
   let held = { segments: [] as TranscriptSegment[], pauses: [] as PauseSpan[] };
   let clock = 0;
   const api: AnalysisStreamApi = {
-    isDesktop: () => true,
+    analyzer: () => ({ producer: "desktopNative", algorithm: "analysis_stream", version: "t" }),
     now: () => clock,
     async invoke<T>(command: string, args: Record<string, unknown>) {
       if (command === "analysis_stream_start") {
@@ -221,22 +227,61 @@ describe("incremental analysis while recording (vox#38)", () => {
     await waitFor(() => expect(seen).toEqual(["new"]));
   });
 
-  it("is unavailable off the desktop: the batch analysis stays in charge, nothing is compared", async () => {
-    const desktop = fakeDesktop();
-    const { result } = renderHook(() =>
-      useAnalysisStream({ ...desktop.api, isDesktop: () => false }),
+  it("off the desktop, streams on this device with exact parity against the shared batch (vox#154)", async () => {
+    const reports: Array<{ report: AnalysisReport; analyzer: AnalyzerIdentity }> = [];
+    const { result } = renderHook(() => useAnalysisStream(onDeviceStreamApi()));
+    const startedAt = "2026-11-01T00:00:00.000Z";
+    act(() =>
+      result.current.start("run-1", startedAt, (report, analyzer) =>
+        reports.push({ report, analyzer }),
+      ),
     );
-    act(() => result.current.start("run-1", "t", () => undefined));
-    expect(result.current.live).toBe(false);
-    act(() => result.current.sync([segment("a", 0)], []));
+    expect(result.current.live).toBe(true);
+    const a = segment("I I want um", 0);
+    const b = { ...segment("the baaaall", 1.2), isFinal: false };
+    const blocks: PauseSpan[] = [{ startSeconds: 2.2, endSeconds: 3.4, afterText: "the" }];
+    const observations: Array<[TranscriptSegment[], PauseSpan[]]> = [
+      [[a], []],
+      [[a, b], []],
+      [[a, { ...b, isFinal: true }], blocks],
+    ];
+    for (const [segments, pauses] of observations) {
+      const before = reports.length;
+      act(() => result.current.sync(segments, pauses));
+      await waitFor(() => expect(reports.length).toBe(before + 1));
+      const batch = fallbackAnalyze({ segments, pauses, sessionStartedAt: startedAt });
+      expect(compareReports(reports.at(-1)!.report, batch)).toMatchObject({ state: "match" });
+    }
+    expect(reports[0].analyzer).toMatchObject({
+      producer: "onDevice",
+      algorithm: "analysis_stream",
+    });
+    // Unchanged input sends nothing.
+    act(() => result.current.sync(...observations[2]));
     let evidence: LiveAnalysisEvidence | null = null;
     await act(async () => {
-      evidence = await result.current.finish([segment("a", 0)], []);
+      evidence = await result.current.finish(...observations[2]);
     });
-    expect(desktop.pushes).toHaveLength(0);
     expect(evidence).toMatchObject({
-      status: "unavailable",
-      reason: STREAM_UNAVAILABLE_OFF_DESKTOP,
+      captureRunId: "run-1",
+      status: "live",
+      parity: { state: "match", events: reports.at(-1)!.report.events.length },
+      work: { updates: 3, noOpUpdates: 0, segmentsRevisited: 1, tokensAnalyzed: 6 },
+    });
+    expect(isAnalysisReport({ ...emptyReport(), liveAnalysis: evidence })).toBe(true);
+  });
+
+  it("off the desktop, an update the stream refuses fails the run: the batch takes over", async () => {
+    const { result } = renderHook(() => useAnalysisStream(onDeviceStreamApi()));
+    act(() => result.current.start("run-1", "t", () => undefined));
+    act(() => result.current.sync([segment("a", Number.NaN)], []));
+    await waitFor(() => expect(result.current.live).toBe(false));
+    let evidence: LiveAnalysisEvidence | null = null;
+    await act(async () => {
+      evidence = await result.current.finish([segment("a", Number.NaN)], []);
+    });
+    expect(evidence).toMatchObject({
+      status: "failed",
       parity: { state: "notComparable" },
       work: null,
     });

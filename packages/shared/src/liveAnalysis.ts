@@ -1,7 +1,8 @@
-// Incremental transcript-and-pause analysis while recording (vox#38). The desktop analyzes only
-// what changed and, after Stop, compares its finalized report with the batch analysis of the
-// same final transcript and pauses without audio. The tolerance is exact equality; acoustic
-// analysis is batch-only and runs once after Stop.
+// Incremental transcript-and-pause analysis while recording (vox#38 on the desktop, vox#154 on
+// other devices). The stream analyzes only what changed and, after Stop, compares its finalized
+// report with the batch analysis of the same final transcript and pauses without audio (the
+// desktop's native analysis, or the shared analysis elsewhere). The tolerance is exact equality;
+// acoustic analysis is batch-only and runs once after Stop.
 
 export const LIVE_ANALYSIS_SCHEMA_VERSION = 1;
 
@@ -9,8 +10,9 @@ export const LIVE_ANALYSIS_SCHEMA_VERSION = 1;
  * - `live`: every update was applied; the live report was current.
  * - `interrupted`: an update was missing or did not fit; nothing more was applied until a resync.
  * - `overloaded`: the retained input would have exceeded its bound; the live report went stale.
- * - `failed`: the stream failed (an error from the desktop).
- * - `unavailable`: no incremental analysis on this device (only the desktop app has it).
+ * - `failed`: the stream failed (an error from the stream, e.g. non-finite times).
+ * - `unavailable`: no incremental analysis on that device (records made before vox#154 off the
+ *   desktop).
  */
 export type LiveAnalysisStatus = "live" | "interrupted" | "overloaded" | "failed" | "unavailable";
 
@@ -20,7 +22,7 @@ export type LiveAnalysisParity =
   | { state: "mismatch"; differenceCount: number; differences: string[] }
   | { state: "notComparable"; reason: string };
 
-/** Deterministic work evidence of the desktop stream (wall-clock time is kept apart). */
+/** Deterministic work evidence of the stream (wall-clock time is kept apart). */
 export type LiveAnalysisWork = {
   updates: number;
   noOpUpdates: number;
@@ -60,7 +62,7 @@ export type LiveAnalysisEvidence = {
   parity: LiveAnalysisParity;
   work: LiveAnalysisWork | null;
   queue: LiveAnalysisQueue;
-  /** Slowest single update and the batch comparison run, milliseconds of desktop time. */
+  /** Slowest single update and the batch comparison run, milliseconds on the analyzing device. */
   maxUpdateMs: number;
   oracleMs: number;
 };

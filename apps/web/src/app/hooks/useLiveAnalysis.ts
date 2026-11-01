@@ -28,8 +28,9 @@ type LiveAnalysisDeps = Pick<
 
 /**
  * Analysis of the workspace observation, and applying its result to the report. While the
- * desktop's incremental analysis is live, it supplies the report from what changed (vox#38) and
- * the batch analysis waits; after Stop the batch analysis runs once over the whole capture.
+ * incremental analysis is live (the desktop's, vox#38, or this device's, vox#154), it supplies the
+ * report from what changed and the batch analysis waits; after Stop the batch analysis runs once
+ * over the whole capture.
  */
 export function useLiveAnalysis({
   segments,
@@ -139,7 +140,7 @@ export function useLiveAnalysis({
 
   /** Starts the incremental analysis of a capture run; its reports are the live report. */
   function startAnalysisStream(runId: string, sessionStartedAt: string) {
-    analysisStream.start(runId, sessionStartedAt, (report) => {
+    analysisStream.start(runId, sessionStartedAt, (report, analyzer) => {
       const descriptor = captureDescriptorRef.current;
       if (viewedSessionRef.current !== null || descriptor?.runId !== runId) return;
       setReport(
@@ -153,11 +154,7 @@ export function useLiveAnalysis({
       setReportRun({
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-        analyzer: {
-          producer: "desktopNative",
-          algorithm: "analysis_stream",
-          version: report.analyzerVersion ?? null,
-        },
+        analyzer,
         usedAudio: false,
         audioId: null,
         // A provisional live report; the batch run after Stop identifies its input.
