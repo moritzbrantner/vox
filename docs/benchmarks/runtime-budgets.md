@@ -15,7 +15,7 @@ kinds of evidence are kept apart:
 
 | Workflow | Desktop (`workflow_bench.rs`) | Browser (`apps/web/src/bench/runtimeBudgets.ts`) |
 |---|---|---|
-| **record → live feedback → stop → save** | Recorder chunks (2048 samples) through live Silero speech detection; transcript segments (each partial first, then final, when their 8 s transcription chunk ends) and recorder pauses (when they end) through the incremental analysis stream. Stop: live detection finished, Silero over the whole capture, the stream's finish with its batch oracle, the batch analysis with the last 90 s of audio. Save: the session list sealed into protected storage, the kept audio sealed, the speech corpus document written and analyzed. | Same arrivals through the on-device stream (`AnalysisStream` from `packages/shared`). Stop: the stream's finish, then `analyzeWithFallback` with the last 90 s (the on-device batch, no compute server). Save: `createSessionRecord`, the session list into `localStorage`, the kept audio into IndexedDB, the local corpus analysis. Speech detection is unavailable off the desktop. |
+| **record → live feedback → stop → save** | Recorder chunks (2048 samples) through live Silero speech detection; transcript segments (each partial first, then final, when their 8 s transcription chunk ends) and recorder pauses (when they end) through the incremental analysis stream. Stop: live detection finished (its spans are the evidence; Silero runs over the whole capture again only when the live run was interrupted or failed), the stream's finish with its batch oracle, the batch analysis with the last 90 s of audio. Save: the session list sealed into protected storage, the kept audio sealed, the speech corpus document written and analyzed. | Same arrivals through the on-device stream (`AnalysisStream` from `packages/shared`). Stop: the stream's finish, then `analyzeWithFallback` with the last 90 s (the on-device batch, no compute server). Save: `createSessionRecord`, the session list into `localStorage`, the kept audio into IndexedDB, the local corpus analysis. Speech detection is unavailable off the desktop. |
 | **review a saved session** | Opening the app: every web-storage entry unsealed, the corpus loaded and analyzed; then each session's kept audio unsealed. | `loadSessionsFromStorage` (parse and validate every session), the corpus analysis, then each session's kept audio from IndexedDB. |
 | **import a backup** | The Rust side of a restore: the session list replaced, the corpus replaced and analyzed, kept audio retained to the restored ids. | An encrypted backup of every session (PBKDF2 600,000 iterations, AES-GCM) decrypted, validated (`parseSessionBackup`) and restored, kept audio retained. |
 | **transcription** | Summarized from the `asr-eval` run that produced the transcripts: native-whisperx `serve` child (vox#147), one model load per run. | Not measured: browser recognition is the browser's own engine. |
@@ -87,13 +87,15 @@ browser (`JSHeapUsedSize` every 100 ms, not the renderer's resident memory).
 
 | Workflow | Wall s | CPU s | Peak memory MiB (start) | Key latency | Budget (advisory) |
 |---|---|---|---|---|---|
-| record → live feedback → stop → save | 75.16 | 63.85 | 116.5 (4.0) | live update p95 0.038 ms (worst recording); VAD chunk p95 10.772 ms; Stop median 1350 ms, max 2779 ms; Save median 173.3 ms, max 546.4 ms | update ≤ 16 ms within; VAD ≤ 32 ms within; Stop ≤ 2000 ms **over (advisory)**; Save ≤ 250 ms **over (advisory)** |
+| record → live feedback → stop → save | 40.82 | 40.66 | 110.6 (4.0) | live update p95 0.026 ms (worst recording); VAD chunk p95 0.747 ms; Stop median 730 ms, max 735 ms; Save median 49.3 ms, max 74.3 ms | update ≤ 16 ms within; VAD ≤ 32 ms within; Stop ≤ 2000 ms within; Save ≤ 250 ms within |
 | review saved sessions | 0.375 | 0.34 | 88.3 (51.8) | open 47.4 ms; kept audio p95 20.1 ms | open ≤ 1000 ms within; audio ≤ 100 ms within |
 | import a backup | 0.058 | 0.05 | 80.2 (80.2) | session list 8.6 ms; corpus 48.8 ms; retain 0.2 ms | ≤ 3000 ms within |
 
-Of the record workflow's 75 s for 67.6 audio minutes (real-time factor 0.019), live speech detection
-is 20.7 s, Stop 44.3 s (Silero over the whole capture again: mean 666 ms; the batch acoustic
-analysis: mean 808 ms), Save 6.6 s.
+Before vox#158 the record workflow took 75 s for 67.6 audio minutes, with Stop at 44.3 s (Silero
+over the whole capture again: mean 666 ms; the batch acoustic analysis: mean 808 ms). Stop now
+reuses the live run's spans: no finite Silero pass, and Stop is the batch acoustic analysis (mean
+727 ms). The record row above is the run after that change on a quieter machine, so its other
+timings (VAD chunk, Save) are lower too and not part of the change.
 
 Proportional work (deterministic):
 
@@ -109,6 +111,8 @@ Proportional work (deterministic):
 | events written into live reports (full snapshots) | 45721 | 11.280 | 85.942 |
 | events read for chunk rows | 68646 | 16.936 | 129.034 |
 | VAD chunks | 31683 | 7.816 | 59.555 |
+| Silero samples (16 kHz, one pass) | 64853629 | 16000.000 | 121905.318 |
+| finite Silero passes on Stop | 0 | 0.000 | 0.000 |
 | batch acoustic samples | 43200000 | 10657.846 | 81203.008 |
 | session list written on Save (bytes) | 26512898 | 6540.981 | 49836.274 |
 | corpus document written on Save (bytes) | 2936937 | 724.570 | 5520.558 |
@@ -157,10 +161,10 @@ ones means the load is small next to a two-minute recording on this GPU.
   (42 KB for the first session, 1.65 MB by the 30th; 26.5 MB written for 30 saves), and the desktop
   rewrites and re-analyzes the whole speech corpus (uncapped). Desktop Save is over its advisory
   budget for that reason plus the 9.6 MB kept-audio write.
-- **Stop analyzes the audio with Silero twice** on the desktop (vox#158): the finite pass after
-  Stop repeats what the live pass already did and is half of the desktop's Stop time, which is over
-  its advisory budget for the longer recordings. This is the largest wall-clock bottleneck measured
-  and the next optimization.
+- **Stop analyzed the audio with Silero twice** on the desktop (vox#158, fixed): a clean live run
+  (detected, every chunk analyzed, the whole capture received) is now the saved evidence, and the
+  finite pass runs only for interrupted, failed or incomplete live runs. The bench checks that
+  Silero sees each capture's samples exactly once.
 - **A missing or too old ONNX Runtime hangs speech detection** instead of reporting it unavailable
   (vox#159). Found because the first desktop run never finished.
 - The browser's Stop is faster than the desktop's because it has no speech detection and its

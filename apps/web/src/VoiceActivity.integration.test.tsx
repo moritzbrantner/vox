@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   type LiveVoiceActivity,
   type VoiceActivityApi,
+  LIVE_SPANS_ARE_EVIDENCE,
   VAD_UNAVAILABLE_OFF_DESKTOP,
   useVoiceActivity,
 } from "./app/hooks/useVoiceActivity";
@@ -57,13 +58,21 @@ function descriptor(runId: string): RecordingDescriptor {
 
 /**
  * The desktop commands as the Rust side answers them: chunk 0 leaves a provisional span, chunk 1
- * finalizes it; the finite run returns `finite` (the same span unless a test says otherwise).
+ * finalizes it; the finish reports the chunks and samples received (`lostSamples` fewer, for a
+ * capture the live run did not fully receive); the finite run returns `finite` (the same span
+ * unless a test says otherwise).
  */
 function fakeDesktop(
-  options: { finite?: (typeof speech)[]; delays?: Record<string, number> } = {},
+  options: {
+    finite?: (typeof speech)[];
+    delays?: Record<string, number>;
+    lostSamples?: number;
+  } = {},
 ) {
   const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
   let clock = 0;
+  let pushes = 0;
+  let received = 0;
   const api: VoiceActivityApi = {
     isDesktop: () => true,
     now: () => clock,
@@ -95,13 +104,24 @@ function fakeDesktop(
         case "voice_activity_start":
           return { runId: request.runId, status: "detected", provider } as T;
         case "voice_activity_push":
+          pushes += 1;
+          received += (args.request as { samples: number[] }).samples.length;
           return (
             request.seq === 0
               ? update(0, [], [{ startSeconds: 0.2, endSeconds: 0.5, score: 0.9 }])
               : update(request.seq ?? 1, [{ ...speech, index: 0 }], [])
           ) as T;
-        case "voice_activity_finish":
-          return update(2, [], [], true) as T;
+        case "voice_activity_finish": {
+          const samplesPerChannel = received - (options.lostSamples ?? 0);
+          return {
+            ...update(pushes, [], [], true),
+            captureMetrics: {
+              ...metrics,
+              samplesPerChannel,
+              durationSeconds: samplesPerChannel / 16_000,
+            },
+          } as T;
+        }
         case "analyze_voice_activity":
           return {
             status: "detected",
@@ -121,7 +141,7 @@ function fakeDesktop(
 const samples = Array.from({ length: 16_000 }, () => 0.2);
 
 describe("voice activity in the recording workflow (audio-analysis#151)", () => {
-  it("shows provisional then final speech live, and saves finite evidence with exact parity", async () => {
+  it("shows provisional then final speech live, and saves the live spans without a second Silero pass (vox#158)", async () => {
     const desktop = fakeDesktop();
     const { result } = renderHook(() => useVoiceActivity(desktop.api));
     act(() => result.current.start("run-1", 16_000));
@@ -148,8 +168,16 @@ describe("voice activity in the recording workflow (audio-analysis#151)", () => 
       provider,
       speech: [{ startSeconds: 0.2, endSeconds: 0.9, maxSpeechProbability: 0.98 }],
       attribution: "unattributed",
-      live: { status: "detected", finalizedSpans: 1, parity: { state: "match", spans: 1 } },
+      coverage: { startSeconds: 0, endSeconds: 1 },
+      unknown: [],
+      live: {
+        status: "detected",
+        finalizedSpans: 1,
+        parity: { state: "notComparable", reason: LIVE_SPANS_ARE_EVIDENCE },
+      },
     });
+    // Detector time is the live run's: two pushes and the finish.
+    expect(evidence!.processingMs).toBeCloseTo(1.2);
     // The saved report with this evidence passes backup validation.
     expect(
       isAnalysisReport({
@@ -163,15 +191,77 @@ describe("voice activity in the recording workflow (audio-analysis#151)", () => 
         voiceActivity: evidence,
       }),
     ).toBe(true);
-    // Pushes are sequenced and the finite run sees exactly the kept samples.
+    // Pushes are sequenced, and Silero saw the capture once: live, never again on Stop.
     const pushes = desktop.calls.filter((call) => call.command === "voice_activity_push");
     expect(pushes.map((call) => (call.args.request as { seq: number }).seq)).toEqual([0, 1]);
-    const finite = desktop.calls.find((call) => call.command === "analyze_voice_activity");
-    expect((finite!.args.request as { samples: number[] }).samples).toHaveLength(16_000);
+    expect(desktop.calls.map((call) => call.command)).not.toContain("analyze_voice_activity");
+  });
+
+  it("runs the finite pass over the kept samples when the live run missed part of the capture", async () => {
+    const desktop = fakeDesktop({ lostSamples: 128 });
+    const { result } = renderHook(() => useVoiceActivity(desktop.api));
+    act(() => result.current.start("run-1", 16_000));
+    act(() => result.current.push(new Float32Array(8_000)));
+    act(() => result.current.push(new Float32Array(8_000)));
+    let evidence: VoiceActivityEvidence | null = null;
+    await act(async () => {
+      evidence = await result.current.finish({
+        descriptor: descriptor("run-1"),
+        samples,
+        sampleRate: 16_000,
+        capturedSampleCount: samples.length,
+      });
+    });
+    const finite = desktop.calls.filter((call) => call.command === "analyze_voice_activity");
+    expect(finite).toHaveLength(1);
+    expect((finite[0].args.request as { samples: number[] }).samples).toHaveLength(16_000);
+    expect(evidence).toMatchObject({
+      status: "detected",
+      processingMs: 3,
+      speech: [{ startSeconds: 0.2, endSeconds: 0.9, maxSpeechProbability: 0.98 }],
+      live: { status: "detected", parity: { state: "match", spans: 1 } },
+    });
+  });
+
+  it("runs the finite pass when live detection was interrupted", async () => {
+    const desktop = fakeDesktop();
+    const interrupted: VoiceActivityApi = {
+      ...desktop.api,
+      async invoke<T>(command: string, args: Record<string, unknown>) {
+        const answer = await desktop.api.invoke<T>(command, args);
+        return (
+          command === "voice_activity_finish"
+            ? {
+                ...answer,
+                status: "interrupted",
+                reason: "chunk 3 arrived where chunk 2 was expected",
+              }
+            : answer
+        ) as T;
+      },
+    };
+    const { result } = renderHook(() => useVoiceActivity(interrupted));
+    act(() => result.current.start("run-1", 16_000));
+    act(() => result.current.push(new Float32Array(8_000)));
+    act(() => result.current.push(new Float32Array(8_000)));
+    let evidence: VoiceActivityEvidence | null = null;
+    await act(async () => {
+      evidence = await result.current.finish({
+        descriptor: descriptor("run-1"),
+        samples,
+        sampleRate: 16_000,
+        capturedSampleCount: samples.length,
+      });
+    });
+    expect(desktop.calls.map((call) => call.command)).toContain("analyze_voice_activity");
+    expect(evidence).toMatchObject({
+      status: "detected",
+      live: { status: "interrupted", parity: { state: "notComparable" } },
+    });
   });
 
   it("records a live/finite difference as a mismatch instead of hiding it", async () => {
-    const desktop = fakeDesktop({ finite: [{ ...speech, endSeconds: 0.932 }] });
+    const desktop = fakeDesktop({ finite: [{ ...speech, endSeconds: 0.932 }], lostSamples: 128 });
     const { result } = renderHook(() => useVoiceActivity(desktop.api));
     act(() => result.current.start("run-1", 16_000));
     act(() => result.current.push(new Float32Array(8_000)));

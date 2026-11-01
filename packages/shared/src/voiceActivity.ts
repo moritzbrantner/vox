@@ -77,13 +77,13 @@ export type VoiceActivityEvidence = {
   status: VoiceActivityStatus;
   provider: VoiceActivityProvider | null;
   reason?: string;
-  /** Session seconds the finite analysis covered. */
+  /** Session seconds the analysis covered (the live run, or the finite run after Stop). */
   coverage: { startSeconds: number; endSeconds: number };
   speech: SpeechInterval[];
   unknown: UnknownInterval[];
   /** Always unattributed: VAD says someone spoke, not who. */
   attribution: "unattributed";
-  /** Finite detector time, milliseconds. */
+  /** Detector time of the run the spans come from, milliseconds. */
   processingMs: number;
   live: LiveVoiceActivitySummary | null;
 };

@@ -309,6 +309,14 @@ function table(platform: string, report: Json) {
   row("events read for chunk rows", stream("chunkEventReads"));
   if (recordings[0]?.counters.vadChunks != null) {
     row("VAD chunks", sum(recordings.map((item) => item.counters.vadChunks as number)));
+    row(
+      "Silero samples (16 kHz, one pass)",
+      sum(recordings.map((item) => item.counters.vadSileroSamples as number)),
+    );
+    row(
+      "finite Silero passes on Stop",
+      sum(recordings.map((item) => item.counters.vadFiniteRuns as number)),
+    );
   }
   row(
     "batch acoustic samples",

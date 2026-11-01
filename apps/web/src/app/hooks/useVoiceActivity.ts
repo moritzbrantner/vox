@@ -17,6 +17,10 @@ import { isDesktopApp } from "../config";
 export const VAD_UNAVAILABLE_OFF_DESKTOP =
   "Speech detection (Silero VAD) runs only in the desktop app.";
 
+/** Parity of a run whose live spans were saved as the evidence: there was no second pass. */
+export const LIVE_SPANS_ARE_EVIDENCE =
+  "the live spans are the saved evidence (no second pass after recording)";
+
 /** Chunks waiting for the detector beyond this are dropped, which interrupts live detection. */
 const MAX_PENDING_CHUNKS = 32;
 
@@ -83,7 +87,8 @@ const defaultApi: VoiceActivityApi = {
 };
 
 /**
- * Live Silero VAD while recording and the finite run after Stop, for one capture at a time.
+ * Live Silero VAD while recording, for one capture at a time; the finite run after Stop only when
+ * the live run did not analyze the whole capture (interrupted, failed or incomplete).
  * Updates of an older capture never reach a newer one: every update carries its run id.
  */
 export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
@@ -103,6 +108,8 @@ export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
     finalized: DetectorSpan[];
     revisions: number;
     maxUpdateMs: number;
+    /** Silero time of all live updates, milliseconds. */
+    processingMs: number;
     status: VoiceActivityStatus | "starting";
     sealed: boolean;
     reason?: string;
@@ -141,6 +148,7 @@ export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
       finalized: [] as DetectorSpan[],
       revisions: 0,
       maxUpdateMs: 0,
+      processingMs: 0,
       status: "starting" as VoiceActivityStatus | "starting",
       sealed: false,
       reason: undefined as string | undefined,
@@ -175,6 +183,7 @@ export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
     if (!run || !current || update.runId !== run.runId || current.runId !== update.runId) return;
     run.revisions += update.revision > 0 ? 1 : 0;
     run.maxUpdateMs = Math.max(run.maxUpdateMs, update.processingMs);
+    run.processingMs += update.processingMs;
     run.status = update.status;
     run.reason = update.reason;
     const finalized = update.finalized.map(({ startSeconds, endSeconds, score }) => ({
@@ -226,7 +235,8 @@ export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
   }
 
   /**
-   * Stops live detection and runs the finite detector over the capture's samples. `samples` are
+   * Stops live detection. A clean live run (detected, every chunk analyzed, the whole capture
+   * received) is the evidence; otherwise the finite detector runs over the samples. `samples` are
    * the end of the recorded stream; `capturedSampleCount` is the whole stream's length.
    */
   async function finish(input: {
@@ -272,6 +282,36 @@ export function useVoiceActivity(api: VoiceActivityApi = defaultApi) {
       run.reason = String(error);
     }
     if (runRef.current !== run) return null;
+    // A clean live run already analyzed every sample of the capture: its finalized spans are the
+    // evidence. The finite pass runs only when live detection did not cover the whole capture.
+    const liveCovered =
+      liveFinal?.finished === true &&
+      run.status === "detected" &&
+      liveFinal.seq === run.seq &&
+      liveFinal.captureMetrics.samplesPerChannel === input.capturedSampleCount;
+    if (liveFinal && liveCovered) {
+      const evidence = voiceActivityEvidence({
+        descriptor,
+        analyzedAt: new Date().toISOString(),
+        status: "detected",
+        provider: liveRef.current?.provider ?? null,
+        spans: run.finalized,
+        streamOffsetSeconds: 0,
+        analyzedSeconds: liveFinal.captureMetrics.durationSeconds,
+        captureSeconds,
+        processingMs: run.processingMs,
+        live: {
+          status: "detected",
+          revisions: run.revisions,
+          finalizedSpans: run.finalized.length,
+          maxUpdateMs: run.maxUpdateMs,
+          parity: { state: "notComparable", reason: LIVE_SPANS_ARE_EVIDENCE },
+        },
+      });
+      setEvidence(evidence);
+      runRef.current = null;
+      return evidence;
+    }
     let finite: FiniteResult;
     try {
       finite = await api.invoke<FiniteResult>("analyze_voice_activity", {
