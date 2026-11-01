@@ -13,8 +13,8 @@ use serde::Serialize;
 
 use crate::speech_analysis::{
     analyze_with_evidence, timed_tokens, AcousticObservations, AnalysisReport,
-    AnalyzeSpeechRequest, Detector, SpeechAnalysisError, StutterEvent, StutterKind, TimedToken,
-    PRODUCT_DETECTOR,
+    AnalyzeSpeechRequest, Detector, PauseInput, SpeechAnalysisError, StutterEvent, StutterKind,
+    TimedToken, PRODUCT_DETECTOR,
 };
 
 /// Appended to the explanation of every event that rests on transcript token times.
@@ -271,23 +271,28 @@ fn collect_transcript_and_pause_observations(
         }
     }
     for (index, pause) in request.pauses.iter().enumerate() {
-        if !pause.start_seconds.is_finite() || !pause.end_seconds.is_finite() {
-            continue;
-        }
-        observations.push(Observation {
-            id: pause_id(index),
-            channel: ObservationChannel::Pause,
-            start_seconds: pause.start_seconds,
-            end_seconds: pause.end_seconds,
-            timing: TimingSource::Observed,
-            confidence: None,
-            detail: ObservationDetail::Pause {
-                index,
-                after_text: pause.after_text.clone(),
-            },
-        });
+        observations.extend(pause_observation(index, pause));
     }
     Ok(observations)
+}
+
+/// The observation of a pause with finite timing; `index` is its position in the request.
+pub(crate) fn pause_observation(index: usize, pause: &PauseInput) -> Option<Observation> {
+    if !pause.start_seconds.is_finite() || !pause.end_seconds.is_finite() {
+        return None;
+    }
+    Some(Observation {
+        id: pause_id(index),
+        channel: ObservationChannel::Pause,
+        start_seconds: pause.start_seconds,
+        end_seconds: pause.end_seconds,
+        timing: TimingSource::Observed,
+        confidence: None,
+        detail: ObservationDetail::Pause {
+            index,
+            after_text: pause.after_text.clone(),
+        },
+    })
 }
 
 /// Sample count and rate of usable request audio.
@@ -365,6 +370,20 @@ fn missing_observations(
         .map(|observation| observation.end_seconds)
         .filter(|value| value.is_finite())
         .fold(0.0_f64, f64::max);
+    let has_transcript = observations
+        .iter()
+        .any(|observation| observation.channel == ObservationChannel::Transcript);
+    missing_observations_from(timeline_end_seconds, has_transcript, audio, acoustic)
+}
+
+/// `missing_observations` from the latest finite observation end and whether any transcript
+/// token was observed.
+pub(crate) fn missing_observations_from(
+    timeline_end_seconds: f64,
+    has_transcript: bool,
+    audio: Option<(usize, u32)>,
+    acoustic: Option<&AcousticObservations>,
+) -> Vec<Observation> {
     let mut missing = Vec::new();
     match (audio, acoustic) {
         (None, _) => missing.push(missing_observation(
@@ -398,10 +417,7 @@ fn missing_observations(
             }
         }
     }
-    if !observations
-        .iter()
-        .any(|observation| observation.channel == ObservationChannel::Transcript)
-    {
+    if !has_transcript {
         missing.push(missing_observation(
             "missing:transcript",
             ObservationChannel::Transcript,
@@ -420,7 +436,7 @@ fn missing_observations(
     missing
 }
 
-fn token_observation(
+pub(crate) fn token_observation(
     segment: usize,
     token: usize,
     timed: TimedToken,

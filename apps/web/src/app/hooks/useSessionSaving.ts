@@ -24,7 +24,7 @@ import type { useLiveAnalysis } from "./useLiveAnalysis";
 import type { useChunkTranscription } from "./useChunkTranscription";
 import type { useCaptureRecovery } from "./useCaptureRecovery";
 import type { useReanalysis } from "./useReanalysis";
-import type { VoiceActivityEvidence } from "@stutter-tracker/shared";
+import type { LiveAnalysisEvidence, VoiceActivityEvidence } from "@stutter-tracker/shared";
 
 type SessionSavingDeps = Pick<
   ReturnType<typeof useWorkspace>,
@@ -60,6 +60,7 @@ type SessionSavingDeps = Pick<
   Pick<ReturnType<typeof useCaptureRecovery>, "captureIdRef" | "releaseWorkspaceCapture"> &
   Pick<ReturnType<typeof useReanalysis>, "startReferenceTranscript"> & {
     voiceActivityEvidenceRef: { current: VoiceActivityEvidence | null };
+    liveAnalysisEvidenceRef: { current: LiveAnalysisEvidence | null };
   };
 
 /** Saving the workspace as a new session or as a new analysis run of the loaded one. */
@@ -93,6 +94,7 @@ export function useSessionSaving({
   releaseWorkspaceCapture,
   startReferenceTranscript,
   voiceActivityEvidenceRef,
+  liveAnalysisEvidenceRef,
 }: SessionSavingDeps) {
   const newSessionSavePendingRef = useRef(false);
 
@@ -138,6 +140,7 @@ export function useSessionSaving({
     const captureId = captureIdRef.current;
     const descriptor = captureDescriptorRef.current;
     const voiceActivity = voiceActivityEvidenceRef.current;
+    const liveAnalysis = liveAnalysisEvidenceRef.current;
     // The capture's audio, kept on the device when the user asked for it; either way it feeds the
     // automatic reference transcript of this recording.
     const capturedAudio =
@@ -173,13 +176,21 @@ export function useSessionSaving({
         startedAt,
         segments,
         pauses,
-        // Speech detection of this very capture run only; a loaded session keeps its own runs.
-        report:
-          voiceActivity?.captureRunId &&
+        // Speech detection and the live/batch comparison of this very capture run only; a loaded
+        // session keeps its own runs.
+        report: {
+          ...report,
+          ...(voiceActivity?.captureRunId &&
           descriptor?.sessionId === captureId &&
           voiceActivity.captureRunId === descriptor.runId
-            ? { ...report, voiceActivity }
-            : report,
+            ? { voiceActivity }
+            : {}),
+          ...(liveAnalysis &&
+          descriptor?.sessionId === captureId &&
+          liveAnalysis.captureRunId === descriptor.runId
+            ? { liveAnalysis }
+            : {}),
+        },
         run: reportRun ?? {
           id: crypto.randomUUID(),
           createdAt: null,

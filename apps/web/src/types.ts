@@ -78,6 +78,8 @@ export type AnalysisReport = {
   captureQuality?: import("@stutter-tracker/shared").RunCaptureQuality;
   /** Silero speech/non-speech evidence of the capture (desktop only). */
   voiceActivity?: import("@stutter-tracker/shared").VoiceActivityEvidence;
+  /** Live incremental analysis compared with this batch run (desktop only). */
+  liveAnalysis?: import("@stutter-tracker/shared").LiveAnalysisEvidence;
   /**
    * Detections withheld for insufficient evidence. Not events: shown only in the analysis
    * details and left out of every count, rate and trend.

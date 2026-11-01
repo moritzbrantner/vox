@@ -48,6 +48,8 @@ Consent: pressing Record is consent to record on this device; on-device recordin
 
 Local storage protection: the desktop app encrypts sessions, voiceprints, settings, capture checkpoints, the corpus and kept audio with a key held in the operating system's credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service), and moves data earlier builds left unencrypted into it on first start. A browser keeps them unencrypted in its profile storage. The mobile app keeps no sessions and deletes each recording after upload. What each platform protects against, and what it does not, is in [docs/protected-storage.md](docs/protected-storage.md); the app shows the same disclosure.
 
+Live analysis: while recording, the desktop app analyzes only what changed in the transcript and pauses (events, speaking rate, pause statistics, chunk rows) instead of re-running the whole analysis on every update; acoustic analysis runs once after Stop. After Stop the live report is compared with the batch analysis of the same final transcript and pauses, with exact equality as the tolerance, and the result (match, mismatch with the differing fields, or not comparable and why) is saved with the session together with deterministic work counters. Off the desktop every update is a batch run as before. Semantics and the UCLASS results are in [docs/benchmarks/live-analysis-parity.md](docs/benchmarks/live-analysis-parity.md).
+
 ## Compute Setup
 
 The default compute URL is the local companion `http://127.0.0.1:8787`.

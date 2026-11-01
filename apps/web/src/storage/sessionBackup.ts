@@ -2,6 +2,7 @@ import {
   type LegacySessionRecord,
   migrateSessionRecord,
   parseOtherParticipants,
+  isLiveAnalysisEvidence,
   isRunCaptureQuality,
   isVoiceActivityEvidence,
   SESSION_SCHEMA_VERSION,
@@ -477,7 +478,8 @@ export function isAnalysisReport(value: unknown) {
     isByKind(value.byKind) &&
     isOptionalObject(value.acousticStats, isAcousticStats) &&
     (value.captureQuality === undefined || isRunCaptureQuality(value.captureQuality)) &&
-    (value.voiceActivity === undefined || isVoiceActivityEvidence(value.voiceActivity))
+    (value.voiceActivity === undefined || isVoiceActivityEvidence(value.voiceActivity)) &&
+    (value.liveAnalysis === undefined || isLiveAnalysisEvidence(value.liveAnalysis))
   );
 }
 

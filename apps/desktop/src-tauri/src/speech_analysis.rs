@@ -473,19 +473,7 @@ pub(crate) fn analyze_with_evidence(
         duration = duration.max(segment.end_seconds);
         speaking_duration_seconds += (segment.end_seconds - segment.start_seconds).max(0.0);
         let segment_tokens = timed_tokens(segment_index, segment);
-        events.extend(detect_repetitions(&segment_tokens));
-        let prolongations = detect_prolongations(&segment_tokens);
-        if segment.alignment == Some(SegmentAlignment::Unaligned) {
-            // No timing to place a prolongation in; none is invented.
-            events.extend(
-                prolongations
-                    .into_iter()
-                    .filter(|event| event.kind != StutterKind::Prolongation),
-            );
-        } else {
-            events.extend(prolongations);
-        }
-        events.extend(detect_fillers(&segment_tokens));
+        events.extend(segment_events(segment, &segment_tokens));
         tokens.extend(segment_tokens);
     }
 
@@ -1641,6 +1629,28 @@ pub(crate) fn timed_tokens(
         .collect()
 }
 
+/// The transcript events of one final segment, in the batch detector's order: repetitions,
+/// prolongations (none for an unaligned segment), fillers.
+pub(crate) fn segment_events(
+    segment: &TranscriptSegmentInput,
+    tokens: &[TimedToken],
+) -> Vec<StutterEvent> {
+    let mut events = detect_repetitions(tokens);
+    let prolongations = detect_prolongations(tokens);
+    if segment.alignment == Some(SegmentAlignment::Unaligned) {
+        // No timing to place a prolongation in; none is invented.
+        events.extend(
+            prolongations
+                .into_iter()
+                .filter(|event| event.kind != StutterKind::Prolongation),
+        );
+    } else {
+        events.extend(prolongations);
+    }
+    events.extend(detect_fillers(tokens));
+    events
+}
+
 fn detect_repetitions(tokens: &[TimedToken]) -> Vec<StutterEvent> {
     let mut events = Vec::new();
     let mut index = 0;
@@ -1777,40 +1787,49 @@ fn detect_blocks(pauses: &[PauseInput]) -> Vec<StutterEvent> {
     pauses
         .iter()
         .enumerate()
-        .filter(|(_, pause)| pause.end_seconds - pause.start_seconds >= 0.75)
-        .map(|(index, pause)| StutterEvent {
-            kind: StutterKind::Block,
-            start_seconds: pause.start_seconds,
-            end_seconds: pause.end_seconds,
-            text: pause
-                .after_text
-                .clone()
-                .unwrap_or_else(|| "pause".to_string()),
-            detail: format!(
-                "{:.1}s silent pause before speech",
-                pause.end_seconds - pause.start_seconds
-            ),
-            confidence: 0.66,
-            source: Some(EventSource::Transcript),
-            acoustic_evidence: None,
-            evidence: Some(
-                if pause.start_seconds.is_finite() && pause.end_seconds.is_finite() {
-                    EventEvidence::new(
-                        format!("block:{}", pause_id(index)),
-                        vec![pause_id(index)],
-                        "The captured pause lasts at least 0.75 s.".to_string(),
-                    )
-                } else {
-                    // Kept as the batch detector reports it; a non-finite pause is no observation.
-                    EventEvidence::new(
-                        format!("block:{}", pause_id(index)),
-                        Vec::new(),
-                        "The captured pause has non-finite timing, so no observation supports this block.".to_string(),
-                    )
-                },
-            ),
-        })
+        .filter_map(|(index, pause)| block_event(index, pause))
         .collect()
+}
+
+/// The block a pause of at least 0.75 s is reported as; `index` is its position in the request.
+pub(crate) fn block_event(index: usize, pause: &PauseInput) -> Option<StutterEvent> {
+    // A NaN length is no block either.
+    let length = pause.end_seconds - pause.start_seconds;
+    if length.is_nan() || length < 0.75 {
+        return None;
+    }
+    Some(StutterEvent {
+        kind: StutterKind::Block,
+        start_seconds: pause.start_seconds,
+        end_seconds: pause.end_seconds,
+        text: pause
+            .after_text
+            .clone()
+            .unwrap_or_else(|| "pause".to_string()),
+        detail: format!(
+            "{:.1}s silent pause before speech",
+            pause.end_seconds - pause.start_seconds
+        ),
+        confidence: 0.66,
+        source: Some(EventSource::Transcript),
+        acoustic_evidence: None,
+        evidence: Some(
+            if pause.start_seconds.is_finite() && pause.end_seconds.is_finite() {
+                EventEvidence::new(
+                    format!("block:{}", pause_id(index)),
+                    vec![pause_id(index)],
+                    "The captured pause lasts at least 0.75 s.".to_string(),
+                )
+            } else {
+                // Kept as the batch detector reports it; a non-finite pause is no observation.
+                EventEvidence::new(
+                    format!("block:{}", pause_id(index)),
+                    Vec::new(),
+                    "The captured pause has non-finite timing, so no observation supports this block.".to_string(),
+                )
+            },
+        ),
+    })
 }
 
 fn speech_stats(
@@ -1825,6 +1844,25 @@ fn speech_stats(
         .iter()
         .map(|pause| (pause.end_seconds - pause.start_seconds).max(0.0))
         .sum::<f64>();
+    speech_stats_from_totals(
+        total_duration_seconds,
+        speaking_duration_seconds,
+        pause_duration_seconds,
+        word_count,
+        stutter_count,
+        chunk_count,
+    )
+}
+
+/// `speech_stats` from the summed pause duration.
+pub(crate) fn speech_stats_from_totals(
+    total_duration_seconds: f64,
+    speaking_duration_seconds: f64,
+    pause_duration_seconds: f64,
+    word_count: usize,
+    stutter_count: usize,
+    chunk_count: usize,
+) -> SpeechStats {
     let minutes = (total_duration_seconds / 60.0).max(1.0 / 60.0);
     let speaking_minutes = (speaking_duration_seconds / 60.0).max(1.0 / 60.0);
     let event_density_per_100_words = if word_count == 0 {
@@ -1856,7 +1894,7 @@ fn speech_stats(
     }
 }
 
-fn blocker_stats(events: &[StutterEvent], total_duration_seconds: f64) -> BlockerStats {
+pub(crate) fn blocker_stats(events: &[StutterEvent], total_duration_seconds: f64) -> BlockerStats {
     let block_durations = events
         .iter()
         .filter(|event| event.kind == StutterKind::Block)
@@ -1938,7 +1976,7 @@ fn chunk_analysis(
         .collect()
 }
 
-fn segment_average_confidence(segment: &TranscriptSegmentInput) -> Option<f32> {
+pub(crate) fn segment_average_confidence(segment: &TranscriptSegmentInput) -> Option<f32> {
     let values = [segment.confidence, segment.speaker_score]
         .into_iter()
         .flatten()
@@ -1955,7 +1993,10 @@ fn overlaps(left_start: f64, left_end: f64, right_start: f64, right_end: f64) ->
     left_start < right_end && right_start < left_end
 }
 
-fn event_applies_to_segment(event: &StutterEvent, segment: &TranscriptSegmentInput) -> bool {
+pub(crate) fn event_applies_to_segment(
+    event: &StutterEvent,
+    segment: &TranscriptSegmentInput,
+) -> bool {
     overlaps(
         event.start_seconds,
         event.end_seconds,
@@ -1966,7 +2007,12 @@ fn event_applies_to_segment(event: &StutterEvent, segment: &TranscriptSegmentInp
         && segment.start_seconds - event.end_seconds <= 1.0)
 }
 
-fn overlap_seconds(left_start: f64, left_end: f64, right_start: f64, right_end: f64) -> f64 {
+pub(crate) fn overlap_seconds(
+    left_start: f64,
+    left_end: f64,
+    right_start: f64,
+    right_end: f64,
+) -> f64 {
     (left_end.min(right_end) - left_start.max(right_start)).max(0.0)
 }
 
@@ -2061,7 +2107,7 @@ fn speaker_id_from_label(label: &str) -> String {
     }
 }
 
-fn classify_severity(rate: f64, word_count: usize, stutter_count: usize) -> Severity {
+pub(crate) fn classify_severity(rate: f64, word_count: usize, stutter_count: usize) -> Severity {
     if stutter_count == 0 {
         return Severity::None;
     }
