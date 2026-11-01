@@ -205,7 +205,8 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// Loading ONNX Runtime dynamically panics when the library is missing; that is "unavailable".
+/// A missing or too-old ONNX Runtime is an error from `runtime-onnx` (vox#159); any panic left
+/// inside `ort` while loading is "unavailable" too.
 fn guarded<T>(load: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     catch_unwind(AssertUnwindSafe(load)).unwrap_or_else(|panic| {
         let message = panic
@@ -557,8 +558,53 @@ mod tests {
         assert_eq!(resample_to_vad_rate(&input, 16_000).unwrap(), input);
     }
 
+    /// Tests that set `VOX_SILERO_VAD_MODEL` / `ORT_DYLIB_PATH` run one at a time.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn missing_onnx_runtime_is_unavailable_not_a_hang() {
+        let _env = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = std::env::temp_dir().join(format!("vox-missing-ort-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("silero_vad.onnx");
+        fs::write(&model, b"not a model").unwrap();
+        let ort_dylib = std::env::var_os("ORT_DYLIB_PATH");
+        std::env::set_var(SILERO_MODEL_ENV, &model);
+        std::env::set_var("ORT_DYLIB_PATH", dir.join("libonnxruntime-missing.so"));
+
+        let (_, started) = LiveVoiceActivity::start(&LiveStartRequest {
+            run_id: "run".into(),
+            sample_rate: 16_000,
+        })
+        .unwrap();
+        assert_eq!(started.status, VadStatus::Unavailable);
+        let reason = started.reason.unwrap();
+        assert!(reason.contains("ONNX Runtime unavailable"), "{reason}");
+        assert!(reason.contains("ORT_DYLIB_PATH"), "{reason}");
+
+        let finite = analyze_finite(&FiniteRequest {
+            samples: vec![0.3; 16_000],
+            sample_rate: 16_000,
+        })
+        .unwrap();
+        assert_eq!(finite.status, VadStatus::Unavailable);
+        assert!(finite.reason.unwrap().contains("ONNX Runtime unavailable"));
+
+        match ort_dylib {
+            Some(path) => std::env::set_var("ORT_DYLIB_PATH", path),
+            None => std::env::remove_var("ORT_DYLIB_PATH"),
+        }
+        std::env::remove_var(SILERO_MODEL_ENV);
+        fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn missing_model_is_unavailable_never_no_speech() {
+        let _env = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::set_var(SILERO_MODEL_ENV, "/nonexistent/silero_vad.onnx");
         let finite = analyze_finite(&FiniteRequest {
             samples: vec![0.3; 48_000],
