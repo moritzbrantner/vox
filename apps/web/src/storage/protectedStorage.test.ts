@@ -11,6 +11,7 @@ import {
   loadSessionsFromStorage,
   replaceStoredSessions,
   saveSessionsToStorage,
+  sessionKey,
   STORE_KEY,
   SPEAKERS_KEY,
   UNREADABLE_SESSIONS_KEY,
@@ -293,9 +294,8 @@ describe("protected local storage", () => {
     replaceStoredSessions([session("restored-1"), session("restored-2")] as never);
     await flushAppStorage();
 
-    expect(
-      JSON.parse(state.entries.get(STORE_KEY) ?? "[]").map((item: { id: string }) => item.id),
-    ).toEqual(["restored-1", "restored-2"]);
+    expect(JSON.parse(state.entries.get(STORE_KEY) ?? "[]")).toEqual(["restored-1", "restored-2"]);
+    expect(JSON.parse(state.entries.get(sessionKey("restored-2")) ?? "null").id).toBe("restored-2");
     expect(state.entries.has(UNREADABLE_SESSIONS_KEY)).toBe(false);
   });
 
@@ -311,7 +311,7 @@ describe("protected local storage", () => {
     expect(loadSessionsFromStorage().map((item) => item.id)).toEqual(["s1"]);
 
     state.failSet = false;
-    saveSessionsToStorage([session("s1")] as never);
+    saveSessionsToStorage([session("s2"), session("s1")] as never);
     await flushAppStorage();
     expect(storageWriteError()).toBeNull();
   });

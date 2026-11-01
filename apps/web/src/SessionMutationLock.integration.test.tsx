@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { createSessionBackup, parseSessionBackup } from "./storage/sessionBackup";
 import type { SavedSession, SpeechCorpusAnalysis } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 // Acceptance tests for issue #102: session mutations that touch the browser store and/or the
 // desktop corpus are serialized across windows through the Web Lock "vox:session-mutations".
@@ -248,11 +249,7 @@ function makeCheckpoint(id: string, withAnalysis: boolean) {
 
 function seedStoredSessions(sessions: SavedSession[]) {
   localStorage.setItem(STORE_KEY, JSON.stringify(sessions));
-  return localStorage.getItem(STORE_KEY);
-}
-
-function storedSessions() {
-  return JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as SavedSession[] | null;
+  return storedSessionsSnapshot();
 }
 
 function storedIds() {
@@ -346,14 +343,14 @@ describe("saves wait for another window's session mutation", () => {
     await user.click(within(notice).getByRole("button", { name: "Recover recording" }));
     expect((await screen.findAllByText("Recovered words")).length).toBeGreaterThan(0);
     await settle();
-    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    expect(storedSessionsSnapshot()).toBeNull();
 
     const otherWindow = await holdLockInOtherWindow();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await settle();
 
     // Nothing is written and the checkpoint stays while the other window mutates.
-    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    expect(storedSessionsSnapshot()).toBeNull();
     expect(localStorage.getItem(checkpointKey)).not.toBeNull();
 
     otherWindowSaves(otherSession);
@@ -378,7 +375,7 @@ describe("saves wait for another window's session mutation", () => {
     await settle();
 
     expect(invocations(SAVE_COMMAND)).toHaveLength(0);
-    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    expect(storedSessionsSnapshot()).toBeNull();
     expect(localStorage.getItem(checkpointKey)).not.toBeNull();
 
     otherWindowSaves(otherSession);
@@ -439,7 +436,7 @@ describe("saves wait for another window's session mutation", () => {
     await settle();
 
     expect(invocations(SAVE_COMMAND)).toHaveLength(0);
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
 
     otherWindowSaves(otherSession);
     await otherWindow.release();
@@ -467,7 +464,7 @@ describe("deletes and restores wait for another window's session mutation", () =
     await settle();
 
     expect(invocations(DELETE_COMMAND)).toHaveLength(0);
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
 
     otherWindowSaves(otherSession);
     await otherWindow.release();
@@ -496,7 +493,7 @@ describe("deletes and restores wait for another window's session mutation", () =
     await settle();
 
     expect(invocations(REPLACE_COMMAND)).toHaveLength(0);
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
     expect(reload).not.toHaveBeenCalled();
 
     otherWindowSaves(otherSession);

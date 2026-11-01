@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SavedSession, SpeakerProfile, SpeechCorpusAnalysis } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 const SPEAKERS_KEY = "stutter-tracker:speakers";
@@ -175,9 +176,7 @@ function corpusCommandsFor(sessionId: string) {
 }
 
 function storedIds() {
-  return (JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[]).map(
-    (session) => session.id,
-  );
+  return ((storedSessions() ?? []) as SavedSession[]).map((session) => session.id);
 }
 
 function keysMentioning(sessionId: string) {
@@ -298,9 +297,7 @@ describe("deleting a saved session (vox#87)", () => {
       seedStore();
       const prompts = mockConfirm(() => true);
       const otherBefore = JSON.stringify(
-        (JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[]).find(
-          (session) => session.id === BETA.id,
-        ),
+        ((storedSessions() ?? []) as SavedSession[]).find((session) => session.id === BETA.id),
       );
 
       const { container } = await renderSeeded(ALPHA);
@@ -316,9 +313,7 @@ describe("deleting a saved session (vox#87)", () => {
       // The other session is byte-for-byte unchanged.
       expect(
         JSON.stringify(
-          (JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[]).find(
-            (session) => session.id === BETA.id,
-          ),
+          ((storedSessions() ?? []) as SavedSession[]).find((session) => session.id === BETA.id),
         ),
       ).toBe(otherBefore);
       // Capture checkpoint, capture lock and any other derived browser key are gone.
@@ -346,7 +341,7 @@ describe("deleting a saved session (vox#87)", () => {
         delete_speech_corpus_session: async () => corpusAnalysis(1),
       });
       seedStore();
-      const storeBefore = localStorage.getItem(STORE_KEY);
+      const storeBefore = storedSessionsSnapshot();
       const prompts = mockConfirm(() => false);
 
       await renderSeeded(ALPHA);
@@ -356,7 +351,7 @@ describe("deleting a saved session (vox#87)", () => {
       expect(deletePrompt(prompts)).toBeDefined();
       await settle();
 
-      expect(localStorage.getItem(STORE_KEY)).toBe(storeBefore);
+      expect(storedSessionsSnapshot()).toBe(storeBefore);
       expect(localStorage.getItem(CHECKPOINT_PREFIX + ALPHA.id)).toBe(checkpointBefore);
       expect(JSON.parse(localStorage.getItem(SPEAKERS_KEY) ?? "null")).toEqual(SPEAKERS);
       expect(invokeCalls("delete_speech_corpus_session")).toEqual([]);

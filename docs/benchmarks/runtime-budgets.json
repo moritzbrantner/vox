@@ -72,10 +72,11 @@
         "streamParity": "match",
         "reportEvents": 40,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 41973,
+        "savedSessionBytes": 41971,
+        "savedSessionIndexBytes": 29,
         "savedSessionsInList": 1,
         "savedAudioBytes": 9605248,
-        "savedCorpusBytes": 4731,
+        "savedCorpusBytes": 3039,
         "savedCorpusSessions": 1
       },
       "F_0101_13y1m_1": {
@@ -112,10 +113,11 @@
         "streamParity": "match",
         "reportEvents": 26,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 87161,
+        "savedSessionBytes": 45187,
+        "savedSessionIndexBytes": 57,
         "savedSessionsInList": 2,
         "savedAudioBytes": 8171648,
-        "savedCorpusBytes": 10019,
+        "savedCorpusBytes": 3504,
         "savedCorpusSessions": 2
       },
       "M_0028_15y11m_1": {
@@ -152,10 +154,11 @@
         "streamParity": "match",
         "reportEvents": 64,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 157144,
+        "savedSessionBytes": 69982,
+        "savedSessionIndexBytes": 86,
         "savedSessionsInList": 3,
         "savedAudioBytes": 8314732,
-        "savedCorpusBytes": 18128,
+        "savedCorpusBytes": 5299,
         "savedCorpusSessions": 3
       },
       "M_0030_17y9m_1": {
@@ -192,10 +195,11 @@
         "streamParity": "match",
         "reportEvents": 53,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 229151,
+        "savedSessionBytes": 72006,
+        "savedSessionIndexBytes": 114,
         "savedSessionsInList": 4,
         "savedAudioBytes": 8180984,
-        "savedCorpusBytes": 26882,
+        "savedCorpusBytes": 5830,
         "savedCorpusSessions": 4
       },
       "M_0052_16y4m_1": {
@@ -232,10 +236,11 @@
         "streamParity": "match",
         "reportEvents": 39,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 294703,
+        "savedSessionBytes": 65551,
+        "savedSessionIndexBytes": 142,
         "savedSessionsInList": 5,
         "savedAudioBytes": 7724908,
-        "savedCorpusBytes": 35076,
+        "savedCorpusBytes": 5384,
         "savedCorpusSessions": 5
       },
       "M_0061_14y8m_1": {
@@ -272,10 +277,11 @@
         "streamParity": "match",
         "reportEvents": 68,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 368353,
+        "savedSessionBytes": 73649,
+        "savedSessionIndexBytes": 170,
         "savedSessionsInList": 6,
         "savedAudioBytes": 8559932,
-        "savedCorpusBytes": 44622,
+        "savedCorpusBytes": 5938,
         "savedCorpusSessions": 6
       },
       "M_0078_12y4m_1": {
@@ -312,10 +318,11 @@
         "streamParity": "match",
         "reportEvents": 34,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 408784,
+        "savedSessionBytes": 40430,
+        "savedSessionIndexBytes": 198,
         "savedSessionsInList": 7,
         "savedAudioBytes": 8733840,
-        "savedCorpusBytes": 50425,
+        "savedCorpusBytes": 3791,
         "savedCorpusSessions": 7
       },
       "M_0078_14y4m_1": {
@@ -352,10 +359,11 @@
         "streamParity": "match",
         "reportEvents": 52,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 465259,
+        "savedSessionBytes": 56474,
+        "savedSessionIndexBytes": 226,
         "savedSessionsInList": 8,
         "savedAudioBytes": 8760552,
-        "savedCorpusBytes": 53234,
+        "savedCorpusBytes": 1823,
         "savedCorpusSessions": 8
       },
       "M_0078_16y5m_1": {
@@ -392,10 +400,11 @@
         "streamParity": "match",
         "reportEvents": 10,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 494767,
+        "savedSessionBytes": 29507,
+        "savedSessionIndexBytes": 254,
         "savedSessionsInList": 9,
         "savedAudioBytes": 9897404,
-        "savedCorpusBytes": 61973,
+        "savedCorpusBytes": 5701,
         "savedCorpusSessions": 9
       },
       "M_0095_07y7m_1": {
@@ -432,10 +441,11 @@
         "streamParity": "match",
         "reportEvents": 49,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 571120,
+        "savedSessionBytes": 76352,
+        "savedSessionIndexBytes": 282,
         "savedSessionsInList": 10,
         "savedAudioBytes": 7824324,
-        "savedCorpusBytes": 66129,
+        "savedCorpusBytes": 2828,
         "savedCorpusSessions": 10
       },
       "M_0095_08y10m_1": {
@@ -472,10 +482,11 @@
         "streamParity": "match",
         "reportEvents": 48,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 630600,
+        "savedSessionBytes": 59479,
+        "savedSessionIndexBytes": 311,
         "savedSessionsInList": 11,
         "savedAudioBytes": 8403896,
-        "savedCorpusBytes": 76595,
+        "savedCorpusBytes": 6630,
         "savedCorpusSessions": 11
       },
       "M_0098_07y8m_1": {
@@ -512,10 +523,11 @@
         "streamParity": "match",
         "reportEvents": 54,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 676158,
+        "savedSessionBytes": 45557,
+        "savedSessionIndexBytes": 339,
         "savedSessionsInList": 12,
         "savedAudioBytes": 8359312,
-        "savedCorpusBytes": 76851,
+        "savedCorpusBytes": 189,
         "savedCorpusSessions": 12
       },
       "M_0098_09y8m_1": {
@@ -552,10 +564,11 @@
         "streamParity": "match",
         "reportEvents": 46,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 733407,
+        "savedSessionBytes": 57248,
+        "savedSessionIndexBytes": 367,
         "savedSessionsInList": 13,
         "savedAudioBytes": 9180000,
-        "savedCorpusBytes": 82443,
+        "savedCorpusBytes": 3694,
         "savedCorpusSessions": 13
       },
       "M_0098_10y6m_1": {
@@ -592,10 +605,11 @@
         "streamParity": "match",
         "reportEvents": 54,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 799474,
+        "savedSessionBytes": 66066,
+        "savedSessionIndexBytes": 395,
         "savedSessionsInList": 14,
         "savedAudioBytes": 7802032,
-        "savedCorpusBytes": 88639,
+        "savedCorpusBytes": 4070,
         "savedCorpusSessions": 14
       },
       "M_0100_11y2m_1": {
@@ -632,10 +646,11 @@
         "streamParity": "match",
         "reportEvents": 41,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 851319,
+        "savedSessionBytes": 51844,
+        "savedSessionIndexBytes": 423,
         "savedSessionsInList": 15,
         "savedAudioBytes": 9964276,
-        "savedCorpusBytes": 97613,
+        "savedCorpusBytes": 5708,
         "savedCorpusSessions": 15
       },
       "M_0100_12y3m_1": {
@@ -672,10 +687,11 @@
         "streamParity": "match",
         "reportEvents": 39,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 892742,
+        "savedSessionBytes": 41422,
+        "savedSessionIndexBytes": 451,
         "savedSessionsInList": 16,
         "savedAudioBytes": 7935780,
-        "savedCorpusBytes": 103390,
+        "savedCorpusBytes": 3765,
         "savedCorpusSessions": 16
       },
       "M_0100_13y10m_1": {
@@ -712,10 +728,11 @@
         "streamParity": "match",
         "reportEvents": 44,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 950492,
+        "savedSessionBytes": 57749,
+        "savedSessionIndexBytes": 480,
         "savedSessionsInList": 17,
         "savedAudioBytes": 8537640,
-        "savedCorpusBytes": 110934,
+        "savedCorpusBytes": 4962,
         "savedCorpusSessions": 17
       },
       "M_0104_10y3m_1": {
@@ -752,10 +769,11 @@
         "streamParity": "match",
         "reportEvents": 99,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1042219,
+        "savedSessionBytes": 91726,
+        "savedSessionIndexBytes": 508,
         "savedSessionsInList": 18,
         "savedAudioBytes": 13127808,
-        "savedCorpusBytes": 116662,
+        "savedCorpusBytes": 3830,
         "savedCorpusSessions": 18
       },
       "M_0138_12y2m_1": {
@@ -792,10 +810,11 @@
         "streamParity": "match",
         "reportEvents": 46,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1079403,
+        "savedSessionBytes": 37183,
+        "savedSessionIndexBytes": 536,
         "savedSessionsInList": 19,
         "savedAudioBytes": 7802032,
-        "savedCorpusBytes": 116918,
+        "savedCorpusBytes": 189,
         "savedCorpusSessions": 19
       },
       "M_0138_13y3m_1": {
@@ -832,10 +851,11 @@
         "streamParity": "match",
         "reportEvents": 50,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1147898,
+        "savedSessionBytes": 68494,
+        "savedSessionIndexBytes": 564,
         "savedSessionsInList": 20,
         "savedAudioBytes": 8470768,
-        "savedCorpusBytes": 125494,
+        "savedCorpusBytes": 5766,
         "savedCorpusSessions": 20
       },
       "M_0210_11y3m_1": {
@@ -872,10 +892,11 @@
         "streamParity": "match",
         "reportEvents": 50,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1201944,
+        "savedSessionBytes": 54045,
+        "savedSessionIndexBytes": 592,
         "savedSessionsInList": 21,
         "savedAudioBytes": 8247856,
-        "savedCorpusBytes": 131185,
+        "savedCorpusBytes": 3679,
         "savedCorpusSessions": 21
       },
       "M_0213_10y10m_1": {
@@ -912,10 +933,11 @@
         "streamParity": "match",
         "reportEvents": 68,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1276710,
+        "savedSessionBytes": 74765,
+        "savedSessionIndexBytes": 621,
         "savedSessionsInList": 22,
         "savedAudioBytes": 8047236,
-        "savedCorpusBytes": 134935,
+        "savedCorpusBytes": 2537,
         "savedCorpusSessions": 22
       },
       "M_0219_11y2m_1": {
@@ -952,10 +974,11 @@
         "streamParity": "match",
         "reportEvents": 44,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1373261,
+        "savedSessionBytes": 96550,
+        "savedSessionIndexBytes": 649,
         "savedSessionsInList": 23,
         "savedAudioBytes": 10521556,
-        "savedCorpusBytes": 140691,
+        "savedCorpusBytes": 3972,
         "savedCorpusSessions": 23
       },
       "M_0234_09y9m_1": {
@@ -992,10 +1015,11 @@
         "streamParity": "match",
         "reportEvents": 67,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1444001,
+        "savedSessionBytes": 70739,
+        "savedSessionIndexBytes": 677,
         "savedSessionsInList": 24,
         "savedAudioBytes": 7735160,
-        "savedCorpusBytes": 146680,
+        "savedCorpusBytes": 3977,
         "savedCorpusSessions": 24
       },
       "M_0394_08y10m_1": {
@@ -1032,10 +1056,11 @@
         "streamParity": "match",
         "reportEvents": 34,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1488675,
+        "savedSessionBytes": 44673,
+        "savedSessionIndexBytes": 706,
         "savedSessionsInList": 25,
         "savedAudioBytes": 7958072,
-        "savedCorpusBytes": 154226,
+        "savedCorpusBytes": 4850,
         "savedCorpusSessions": 25
       },
       "M_0394_09y2m_1": {
@@ -1072,10 +1097,11 @@
         "streamParity": "match",
         "reportEvents": 5,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1502592,
+        "savedSessionBytes": 13916,
+        "savedSessionIndexBytes": 734,
         "savedSessionsInList": 26,
         "savedAudioBytes": 7779744,
-        "savedCorpusBytes": 159878,
+        "savedCorpusBytes": 3754,
         "savedCorpusSessions": 26
       },
       "M_0394_09y5m_1": {
@@ -1112,10 +1138,11 @@
         "streamParity": "match",
         "reportEvents": 7,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1519867,
+        "savedSessionBytes": 17274,
+        "savedSessionIndexBytes": 762,
         "savedSessionsInList": 27,
         "savedAudioBytes": 8403896,
-        "savedCorpusBytes": 166041,
+        "savedCorpusBytes": 4037,
         "savedCorpusSessions": 27
       },
       "M_0399_12y4m_1": {
@@ -1152,10 +1179,11 @@
         "streamParity": "match",
         "reportEvents": 13,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1543400,
+        "savedSessionBytes": 23532,
+        "savedSessionIndexBytes": 790,
         "savedSessionsInList": 28,
         "savedAudioBytes": 9808236,
-        "savedCorpusBytes": 174885,
+        "savedCorpusBytes": 5921,
         "savedCorpusSessions": 28
       },
       "M_0556_07y8m_1": {
@@ -1192,10 +1220,11 @@
         "streamParity": "match",
         "reportEvents": 33,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1590010,
+        "savedSessionBytes": 46609,
+        "savedSessionIndexBytes": 818,
         "savedSessionsInList": 29,
         "savedAudioBytes": 7824324,
-        "savedCorpusBytes": 178812,
+        "savedCorpusBytes": 2599,
         "savedCorpusSessions": 29
       },
       "M_0556_08y0m_1": {
@@ -1232,24 +1261,25 @@
         "streamParity": "match",
         "reportEvents": 52,
         "acousticSamples": 1440000,
-        "savedSessionListBytes": 1650311,
+        "savedSessionBytes": 60300,
+        "savedSessionIndexBytes": 846,
         "savedSessionsInList": 30,
         "savedAudioBytes": 7735160,
-        "savedCorpusBytes": 182846,
+        "savedCorpusBytes": 2706,
         "savedCorpusSessions": 30
       }
     },
     "review": {
-      "webEntriesUnsealed": 1,
-      "webBytesUnsealed": 1650311,
+      "webEntriesUnsealed": 31,
+      "webBytesUnsealed": 1651126,
       "corpusSessionsLoaded": 30,
       "audioOpened": 30,
       "audioBytesUnsealed": 259418356
     },
     "import": {
       "sessions": 30,
-      "sessionListBytes": 1650311,
-      "corpusBytes": 182848
+      "sessionListBytes": 1651126,
+      "corpusBytes": 119972
     }
   },
   "browser": {
@@ -1284,7 +1314,8 @@
         "streamParity": "match",
         "reportEvents": 55,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 24823,
+        "savedSessionChars": 24821,
+        "savedSessionIndexChars": 29,
         "savedSessionsInList": 1,
         "savedAudioSamples": 2401280,
         "corpusSessions": 1
@@ -1319,7 +1350,8 @@
         "streamParity": "match",
         "reportEvents": 38,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 46977,
+        "savedSessionChars": 22153,
+        "savedSessionIndexChars": 57,
         "savedSessionsInList": 2,
         "savedAudioSamples": 2042880,
         "corpusSessions": 2
@@ -1354,7 +1386,8 @@
         "streamParity": "match",
         "reportEvents": 91,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 91851,
+        "savedSessionChars": 44873,
+        "savedSessionIndexChars": 86,
         "savedSessionsInList": 3,
         "savedAudioSamples": 2078651,
         "corpusSessions": 3
@@ -1389,7 +1422,8 @@
         "streamParity": "match",
         "reportEvents": 84,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 137178,
+        "savedSessionChars": 45326,
+        "savedSessionIndexChars": 114,
         "savedSessionsInList": 4,
         "savedAudioSamples": 2045214,
         "corpusSessions": 4
@@ -1424,7 +1458,8 @@
         "streamParity": "match",
         "reportEvents": 65,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 175584,
+        "savedSessionChars": 38405,
+        "savedSessionIndexChars": 142,
         "savedSessionsInList": 5,
         "savedAudioSamples": 1931195,
         "corpusSessions": 5
@@ -1459,7 +1494,8 @@
         "streamParity": "match",
         "reportEvents": 80,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 213788,
+        "savedSessionChars": 38203,
+        "savedSessionIndexChars": 170,
         "savedSessionsInList": 6,
         "savedAudioSamples": 2139951,
         "corpusSessions": 6
@@ -1494,7 +1530,8 @@
         "streamParity": "match",
         "reportEvents": 65,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 247472,
+        "savedSessionChars": 33683,
+        "savedSessionIndexChars": 198,
         "savedSessionsInList": 7,
         "savedAudioSamples": 2183428,
         "corpusSessions": 7
@@ -1529,7 +1566,8 @@
         "streamParity": "match",
         "reportEvents": 69,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 274011,
+        "savedSessionChars": 26538,
+        "savedSessionIndexChars": 226,
         "savedSessionsInList": 8,
         "savedAudioSamples": 2190106,
         "corpusSessions": 8
@@ -1564,7 +1602,8 @@
         "streamParity": "match",
         "reportEvents": 19,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 294448,
+        "savedSessionChars": 20436,
+        "savedSessionIndexChars": 254,
         "savedSessionsInList": 9,
         "savedAudioSamples": 2474319,
         "corpusSessions": 9
@@ -1599,7 +1638,8 @@
         "streamParity": "match",
         "reportEvents": 64,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 326164,
+        "savedSessionChars": 31715,
+        "savedSessionIndexChars": 282,
         "savedSessionsInList": 10,
         "savedAudioSamples": 1956049,
         "corpusSessions": 10
@@ -1634,7 +1674,8 @@
         "streamParity": "match",
         "reportEvents": 75,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 365843,
+        "savedSessionChars": 39678,
+        "savedSessionIndexChars": 311,
         "savedSessionsInList": 11,
         "savedAudioSamples": 2100942,
         "corpusSessions": 11
@@ -1669,7 +1710,8 @@
         "streamParity": "match",
         "reportEvents": 83,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 390160,
+        "savedSessionChars": 24316,
+        "savedSessionIndexChars": 339,
         "savedSessionsInList": 12,
         "savedAudioSamples": 2089796,
         "corpusSessions": 12
@@ -1704,7 +1746,8 @@
         "streamParity": "match",
         "reportEvents": 65,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 421431,
+        "savedSessionChars": 31270,
+        "savedSessionIndexChars": 367,
         "savedSessionsInList": 13,
         "savedAudioSamples": 2294968,
         "corpusSessions": 13
@@ -1739,7 +1782,8 @@
         "streamParity": "match",
         "reportEvents": 78,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 458511,
+        "savedSessionChars": 37079,
+        "savedSessionIndexChars": 395,
         "savedSessionsInList": 14,
         "savedAudioSamples": 1950476,
         "corpusSessions": 14
@@ -1774,7 +1818,8 @@
         "streamParity": "match",
         "reportEvents": 47,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 485763,
+        "savedSessionChars": 27251,
+        "savedSessionIndexChars": 423,
         "savedSessionsInList": 15,
         "savedAudioSamples": 2491037,
         "corpusSessions": 15
@@ -1809,7 +1854,8 @@
         "streamParity": "match",
         "reportEvents": 70,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 518252,
+        "savedSessionChars": 32488,
+        "savedSessionIndexChars": 451,
         "savedSessionsInList": 16,
         "savedAudioSamples": 1983913,
         "corpusSessions": 16
@@ -1844,7 +1890,8 @@
         "streamParity": "match",
         "reportEvents": 62,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 554114,
+        "savedSessionChars": 35861,
+        "savedSessionIndexChars": 480,
         "savedSessionsInList": 17,
         "savedAudioSamples": 2134378,
         "corpusSessions": 17
@@ -1879,7 +1926,8 @@
         "streamParity": "match",
         "reportEvents": 119,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 606551,
+        "savedSessionChars": 52436,
+        "savedSessionIndexChars": 508,
         "savedSessionsInList": 18,
         "savedAudioSamples": 3281920,
         "corpusSessions": 18
@@ -1914,7 +1962,8 @@
         "streamParity": "match",
         "reportEvents": 85,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 632057,
+        "savedSessionChars": 25505,
+        "savedSessionIndexChars": 536,
         "savedSessionsInList": 19,
         "savedAudioSamples": 1950476,
         "corpusSessions": 19
@@ -1949,7 +1998,8 @@
         "streamParity": "match",
         "reportEvents": 83,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 678819,
+        "savedSessionChars": 46761,
+        "savedSessionIndexChars": 564,
         "savedSessionsInList": 20,
         "savedAudioSamples": 2117660,
         "corpusSessions": 20
@@ -1984,7 +2034,8 @@
         "streamParity": "match",
         "reportEvents": 77,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 713718,
+        "savedSessionChars": 34898,
+        "savedSessionIndexChars": 592,
         "savedSessionsInList": 21,
         "savedAudioSamples": 2061932,
         "corpusSessions": 21
@@ -2019,7 +2070,8 @@
         "streamParity": "match",
         "reportEvents": 89,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 753575,
+        "savedSessionChars": 39856,
+        "savedSessionIndexChars": 621,
         "savedSessionsInList": 22,
         "savedAudioSamples": 2011777,
         "corpusSessions": 22
@@ -2054,7 +2106,8 @@
         "streamParity": "match",
         "reportEvents": 52,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 784880,
+        "savedSessionChars": 31304,
+        "savedSessionIndexChars": 649,
         "savedSessionsInList": 23,
         "savedAudioSamples": 2630357,
         "corpusSessions": 23
@@ -2089,7 +2142,8 @@
         "streamParity": "match",
         "reportEvents": 80,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 822837,
+        "savedSessionChars": 37956,
+        "savedSessionIndexChars": 677,
         "savedSessionsInList": 24,
         "savedAudioSamples": 1933758,
         "corpusSessions": 24
@@ -2124,7 +2178,8 @@
         "streamParity": "match",
         "reportEvents": 64,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 855910,
+        "savedSessionChars": 33072,
+        "savedSessionIndexChars": 706,
         "savedSessionsInList": 25,
         "savedAudioSamples": 1989486,
         "corpusSessions": 25
@@ -2159,7 +2214,8 @@
         "streamParity": "match",
         "reportEvents": 3,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 866647,
+        "savedSessionChars": 10736,
+        "savedSessionIndexChars": 734,
         "savedSessionsInList": 26,
         "savedAudioSamples": 1944904,
         "corpusSessions": 26
@@ -2194,7 +2250,8 @@
         "streamParity": "match",
         "reportEvents": 7,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 879680,
+        "savedSessionChars": 13032,
+        "savedSessionIndexChars": 762,
         "savedSessionsInList": 27,
         "savedAudioSamples": 2100942,
         "corpusSessions": 27
@@ -2229,7 +2286,8 @@
         "streamParity": "match",
         "reportEvents": 15,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 898757,
+        "savedSessionChars": 19076,
+        "savedSessionIndexChars": 790,
         "savedSessionsInList": 28,
         "savedAudioSamples": 2452027,
         "corpusSessions": 28
@@ -2264,7 +2322,8 @@
         "streamParity": "match",
         "reportEvents": 44,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 920591,
+        "savedSessionChars": 21833,
+        "savedSessionIndexChars": 818,
         "savedSessionsInList": 29,
         "savedAudioSamples": 1956049,
         "corpusSessions": 29
@@ -2299,7 +2358,8 @@
         "streamParity": "match",
         "reportEvents": 83,
         "acousticSamples": 1440000,
-        "savedSessionListChars": 957903,
+        "savedSessionChars": 37311,
+        "savedSessionIndexChars": 846,
         "savedSessionsInList": 30,
         "savedAudioSamples": 1933758,
         "corpusSessions": 30
@@ -2307,7 +2367,7 @@
     },
     "review": {
       "sessionsLoaded": 30,
-      "sessionListChars": 957903,
+      "sessionListChars": 958718,
       "corpusSessions": 30,
       "audioOpened": 30,
       "audioSamplesRead": 64853629

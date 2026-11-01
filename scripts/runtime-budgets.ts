@@ -322,20 +322,23 @@ function table(platform: string, report: Json) {
     "batch acoustic samples",
     sum(recordings.map((item) => item.counters.acousticSamples as number)),
   );
-  const listKey =
-    recordings[0]?.counters.savedSessionListBytes != null
-      ? "savedSessionListBytes"
-      : "savedSessionListChars";
-  row(
-    `session list written on Save (${listKey.endsWith("Bytes") ? "bytes" : "UTF-16 units"})`,
-    sum(recordings.map((item) => item.counters[listKey] as number)),
-  );
+  const unit = recordings[0]?.counters.savedSessionBytes != null ? "Bytes" : "Chars";
+  const unitName = unit === "Bytes" ? "bytes" : "UTF-16 units";
+  const written = (key: string) => recordings.map((item) => item.counters[key] as number);
+  row(`session values written on Save (${unitName})`, sum(written(`savedSession${unit}`)));
+  row(`session id list written on Save (${unitName})`, sum(written(`savedSessionIndex${unit}`)));
   if (recordings[0]?.counters.savedCorpusBytes != null) {
-    row(
-      "corpus document written on Save (bytes)",
-      sum(recordings.map((item) => item.counters.savedCorpusBytes as number)),
-    );
+    row("corpus entries written on Save (bytes)", sum(written("savedCorpusBytes")));
   }
+  // vox#157: what one Save writes must not grow with the sessions saved before it.
+  const perSave = recordings.map(
+    (item) =>
+      (item.counters[`savedSession${unit}`] as number) +
+      ((item.counters.savedCorpusBytes as number | undefined) ?? 0),
+  );
+  lines.push(
+    `\nSession and corpus writes per Save: first ${perSave[0] ?? 0}, last ${perSave.at(-1) ?? 0}, max ${max(perSave)} (${unitName}).`,
+  );
   return lines.join("\n");
 }
 

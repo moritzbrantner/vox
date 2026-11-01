@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fallbackAnalyze } from "@stutter-tracker/shared";
 import * as tauriCore from "@tauri-apps/api/core";
 import * as recorderModule from "./audio/browserRecorder";
+import { storedSessions } from "./test/storedSessions";
 
 const { REMOTE_SERVER_URL, fetchCalls } = vi.hoisted(() => {
   const url = "https://speech.example.com";
@@ -30,7 +31,6 @@ const { REMOTE_SERVER_URL, fetchCalls } = vi.hoisted(() => {
 // Imported after the hoisted setup so the app's compute client sees the remote destination.
 const { App } = await import("./App");
 
-const STORE_KEY = "stutter-tracker:sessions";
 const TRANSCRIPTION_KEY = "stutter-tracker:transcription";
 const TEST_CAPTURE = recorderModule.describeCapture(undefined);
 // Endpoints that carry speech content or prepare models on a server.
@@ -333,10 +333,8 @@ describe("model identity on saved analysis runs", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]");
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    const [saved] = storedSessions() ?? [];
     expect(saved.analysis.analyzer).toMatchObject({ producer: "desktopNative" });
     // The run names the model that produced its transcript, not a repository revision.
     const run = JSON.stringify(saved.analysis);

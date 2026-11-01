@@ -12,12 +12,12 @@ import { App } from "./App";
 import * as recorderModule from "./audio/browserRecorder";
 import { resetSessionAudioConnection } from "./storage/sessionAudio";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
-const STORE_KEY = "stutter-tracker:sessions";
 const TRANSCRIPTION_KEY = "stutter-tracker:transcription";
 const TEST_CAPTURE = recorderModule.describeCapture(undefined);
 
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+const stored = () => (storedSessions() ?? []) as SavedSession[];
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

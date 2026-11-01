@@ -12,6 +12,7 @@ import {
   resetSessionAudioConnection,
 } from "./storage/sessionAudio";
 import type { SavedSession } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -81,7 +82,7 @@ const ORIGIN: SavedSession = {
 };
 const SAMPLES = Float32Array.from({ length: 1600 }, (_, index) => Math.sin(index / 10) / 2);
 
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+const stored = () => (storedSessions() ?? []) as SavedSession[];
 let downloads: Blob[] = [];
 
 function freshDevice() {
@@ -161,7 +162,7 @@ describe("annotation exchange (vox#23)", () => {
     for (const hidden of ["Secret model note", "daf", "assisted", "2026-05-19", "stutterCount"]) {
       expect(sentText).not.toContain(hidden);
     }
-    const originStore = localStorage.getItem(STORE_KEY)!;
+    const originStore = storedSessionsSnapshot()!;
     origin.unmount();
 
     // Rater device: no copy of the session yet.
@@ -224,10 +225,10 @@ describe("annotation exchange (vox#23)", () => {
     const edited = { ...ORIGIN, segments: [{ ...ORIGIN.segments[0], text: "I want" }] };
     freshDevice();
     localStorage.setItem(STORE_KEY, JSON.stringify([edited]));
-    const before = localStorage.getItem(STORE_KEY);
+    const before = storedSessionsSnapshot();
     renderApp();
     await importFile(sent);
     await screen.findByText(/Import failed: The file describes a different version/);
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
   });
 });

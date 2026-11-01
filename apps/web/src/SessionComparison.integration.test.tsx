@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -50,7 +51,7 @@ function session(id: string, startedAt: string, language: string, blocks: number
 const EARLIER = session("s-1", "2026-05-19T10:00:00.000Z", "en", 6);
 const LATER = session("s-2", "2026-05-20T10:00:00.000Z", "en", 2);
 const LEGACY = session("s-3", "2026-05-21T10:00:00.000Z", "unknown", 1);
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+const stored = () => (storedSessions() ?? []) as SavedSession[];
 
 async function tagRow(container: HTMLElement, index: number, task: string) {
   const rows = await waitFor(() => {

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { initializeAppStorage, resetAppStorage } from "./storage/protectedStorage";
 import type { SavedSession, SpeechCorpusAnalysis } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -198,7 +199,7 @@ describe("desktop saved-session persistence", () => {
 
     secondDelete.resolve(emptyCorpusAnalysis());
     await waitFor(() => {
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "null")).toEqual([]);
+      expect(storedSessions()).toEqual([]);
     });
   });
 
@@ -232,7 +233,7 @@ describe("desktop saved-session persistence", () => {
     deletion.resolve(emptyCorpusAnalysis());
 
     await waitFor(() => {
-      const persisted = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as SavedSession[];
+      const persisted = storedSessions() as SavedSession[];
       expect(persisted.map((session) => session.id)).toEqual(["session-b"]);
     });
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
@@ -271,7 +272,7 @@ describe("desktop saved-session persistence", () => {
     deletion.resolve(emptyCorpusAnalysis());
 
     await waitFor(() => {
-      const persisted = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as SavedSession[];
+      const persisted = storedSessions() as SavedSession[];
       expect(persisted.map((session) => session.id)).toEqual(["session-b"]);
     });
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
@@ -322,7 +323,7 @@ describe("desktop protected storage", () => {
     );
 
     expect((await initializeAppStorage()).kind).toBe("protected");
-    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    expect(storedSessionsSnapshot()).toBeNull();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     renderApp();
 
@@ -336,7 +337,7 @@ describe("desktop protected storage", () => {
       const persisted = JSON.parse(protectedEntries.get(STORE_KEY) ?? "[]") as SavedSession[];
       expect(persisted).toHaveLength(1);
     });
-    expect(localStorage.getItem(STORE_KEY)).toBeNull();
+    expect(storedSessionsSnapshot()).toBeNull();
   });
 
   it("tells a browser user that local data is not encrypted", async () => {

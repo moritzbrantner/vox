@@ -1,13 +1,11 @@
-import { appStorage } from "../../storage/protectedStorage";
 import { isAnalysisVerified } from "@stutter-tracker/shared";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isScoreWithheld } from "../../audio/captureQuality";
-import { loadSessionsFromStorage } from "../../storage/localStorage";
+import { loadSessionsFromStorage, saveSessionsToStorage } from "../../storage/localStorage";
 import { retainSessionAudio } from "../../storage/sessionAudio";
 import { createSessionMutationQueue } from "../../storage/sessionMutations";
 import { type SavedSession, type SpeechCorpusAnalysis } from "../../types";
-import { STORE_KEY } from "../config";
 import {
   analyzeLocalCorpus,
   countUnverifiedCorpusSessions,
@@ -123,7 +121,7 @@ export function useSessionLibrary({ isNative }: SessionLibraryDeps) {
 
   // Writes storage first, so a failed write (quota, blocked storage) leaves memory unchanged.
   function persistSessions(next: SavedSession[]) {
-    appStorage().setItem(STORE_KEY, JSON.stringify(next));
+    saveSessionsToStorage(next);
     sessionsRef.current = next;
     setSessions(next);
   }

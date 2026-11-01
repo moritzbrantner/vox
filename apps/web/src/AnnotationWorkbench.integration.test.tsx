@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -56,7 +57,7 @@ const SESSION: SavedSession = migrateSessionRecord({
 });
 
 function stored(): SavedSession[] {
-  return JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+  return (storedSessions() ?? []) as SavedSession[];
 }
 
 async function openSession(container: HTMLElement) {
@@ -183,7 +184,10 @@ describe("annotation workbench (vox#23)", () => {
 
     const setItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key === STORE_KEY) throw new DOMException("full", "QuotaExceededError");
+      // The session list and every session's own value.
+      if (key.startsWith("stutter-tracker:session")) {
+        throw new DOMException("full", "QuotaExceededError");
+      }
       setItem.call(this, key, value);
     });
     await userEvent.click(within(workbench).getByRole("button", { name: "Save draft" }));

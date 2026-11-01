@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import * as recorderModule from "./audio/browserRecorder";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
-const STORE_KEY = "stutter-tracker:sessions";
 const TRANSCRIPTION_KEY = "stutter-tracker:transcription";
 const TEST_CAPTURE = recorderModule.describeCapture(undefined);
 const VERBATIM = "I I I w-want um wa- water";
@@ -111,10 +111,8 @@ describe("transcription run binding and verbatim evidence (vox#26)", () => {
     expect(analyzed.map((segment) => segment.text)).toEqual(languages.map(() => VERBATIM));
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!) as SavedSession[];
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    const [saved] = storedSessions()! as SavedSession[];
     expect(saved.context.spokenLanguage).toBe("en");
     expect(saved.segments.map((segment) => segment.text)).toEqual(languages.map(() => VERBATIM));
 
@@ -122,9 +120,7 @@ describe("transcription run binding and verbatim evidence (vox#26)", () => {
     expect(screen.getByLabelText("Verbatim transcript")).toHaveTextContent(VERBATIM);
     await userEvent.click(screen.getByLabelText(/Readable view/));
     expect(screen.getByLabelText("Readable transcript")).toHaveTextContent(/^I want water/);
-    expect(
-      (JSON.parse(localStorage.getItem(STORE_KEY)!) as SavedSession[])[0].segments[0].text,
-    ).toBe(VERBATIM);
+    expect((storedSessions()! as SavedSession[])[0].segments[0].text).toBe(VERBATIM);
   });
 
   it("sends the device preference and records the backend and device that ran (vox#139)", async () => {
@@ -174,10 +170,8 @@ describe("transcription run binding and verbatim evidence (vox#26)", () => {
       "native-whisperx on CUDA",
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!) as SavedSession[];
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    const [saved] = storedSessions()! as SavedSession[];
     expect(saved.transcript?.provenance?.compute).toEqual(compute);
   });
 });

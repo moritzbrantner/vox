@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -55,7 +56,7 @@ const SESSION: SavedSession = migrateSessionRecord({
   },
 });
 
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")[0] as SavedSession;
+const stored = () => (storedSessions() ?? [])[0] as SavedSession;
 
 async function openSession(container: HTMLElement) {
   const row = await waitFor(() => {
