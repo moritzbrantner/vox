@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { latestVoiceActivity } from "@stutter-tracker/shared";
 import { AnnotationExchangePanel } from "../components/AnnotationExchangePanel";
 import { AnnotationWorkbench } from "../components/AnnotationWorkbench";
@@ -22,6 +22,7 @@ import { saveRemoteConsent } from "../storage/localStorage";
 import { normalizedBlockerStats, normalizedSpeechStats } from "./analysis";
 import { CONSENT_SERVER_URL, LANGUAGES, TRANSCRIPTION_ENGINES, computeClient } from "./config";
 import { downloadFile, downloadJsonFile } from "./downloads";
+import { useAnalysisStream } from "./hooks/useAnalysisStream";
 import { useCaptureRecovery } from "./hooks/useCaptureRecovery";
 import { useChunkTranscription } from "./hooks/useChunkTranscription";
 import { useIntentPredictions } from "./hooks/useIntentPredictions";
@@ -89,6 +90,7 @@ export function App() {
     isRecordingRef,
   } = useWorkspace();
   const voiceActivity = useVoiceActivity();
+  const analysisStream = useAnalysisStream();
   const {
     soloSpeaker,
     soloSpeakerRef,
@@ -129,7 +131,7 @@ export function App() {
     removeSpeakerProfile,
     deleteSpeakerRemotely,
   } = useSpeakerProfiles({ setMessage, sampleRateRef, samplesRef });
-  const { analysisRequest, analysisQuery, isAnalyzing } = useLiveAnalysis({
+  const { analysisRequest, analysisQuery, isAnalyzing, startAnalysisStream } = useLiveAnalysis({
     segments,
     pauses,
     setReport,
@@ -143,6 +145,7 @@ export function App() {
     captureDescriptorRef,
     viewedSession,
     viewedSessionRef,
+    analysisStream,
   });
   const {
     transcription,
@@ -192,6 +195,12 @@ export function App() {
     samplesRef,
     speakersRef,
   });
+  // The capture is complete (recorded and transcribed): the incremental analysis ends with a
+  // comparison against the batch analysis of exactly this final transcript and these pauses.
+  useEffect(() => {
+    if (!captureInProgress) void analysisStream.finish(segments, pauses);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captureInProgress]);
   const { intentPredictions } = useIntentPredictions({
     segments,
     report,
@@ -303,6 +312,7 @@ export function App() {
     canSetAsideWorkspaceCapture,
     setAsideUnsavedCapture,
     voiceActivity,
+    startAnalysisStream,
   });
   const {
     updateStoredSession,
@@ -379,6 +389,7 @@ export function App() {
     releaseWorkspaceCapture,
     startReferenceTranscript,
     voiceActivityEvidenceRef: voiceActivity.evidenceRef,
+    liveAnalysisEvidenceRef: analysisStream.evidenceRef,
   });
   const { deletingSessionId, deleteSession, restoreSessions } = useSessionRemoval({
     setSegments,

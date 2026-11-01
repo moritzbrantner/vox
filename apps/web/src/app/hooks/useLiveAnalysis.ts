@@ -1,8 +1,10 @@
 import { hashKey, useQuery } from "@tanstack/react-query";
+import { UNKNOWN_INPUT_ID } from "@stutter-tracker/shared";
 import { useEffect, useMemo } from "react";
 import { withCaptureQuality } from "../../audio/captureQuality";
 import { analysisAudioPayload, analyzeWithFallback } from "../analysis";
 import { TRANSCRIPTION_TARGET_SAMPLE_RATE } from "../config";
+import type { useAnalysisStream } from "./useAnalysisStream";
 import type { useWorkspace } from "./useWorkspace";
 
 type LiveAnalysisDeps = Pick<
@@ -20,9 +22,15 @@ type LiveAnalysisDeps = Pick<
   | "captureDescriptorRef"
   | "viewedSession"
   | "viewedSessionRef"
->;
+> & {
+  analysisStream: Pick<ReturnType<typeof useAnalysisStream>, "live" | "start" | "sync">;
+};
 
-/** Analysis of the workspace observation, and applying its result to the report. */
+/**
+ * Analysis of the workspace observation, and applying its result to the report. While the
+ * desktop's incremental analysis is live, it supplies the report from what changed (vox#38) and
+ * the batch analysis waits; after Stop the batch analysis runs once over the whole capture.
+ */
 export function useLiveAnalysis({
   segments,
   pauses,
@@ -37,9 +45,12 @@ export function useLiveAnalysis({
   captureDescriptorRef,
   viewedSession,
   viewedSessionRef,
+  analysisStream,
 }: LiveAnalysisDeps) {
+  const streamLive = analysisStream.live;
   const analysisRequest = useMemo(() => {
-    const audio = analysisAudioPayload(samplesRef.current, sampleRateRef.current);
+    // While streaming, no audio is resampled for a batch run that is not going to happen.
+    const audio = streamLive ? {} : analysisAudioPayload(samplesRef.current, sampleRateRef.current);
     return {
       segments,
       pauses,
@@ -48,7 +59,7 @@ export function useLiveAnalysis({
     };
     // captureRevision is a deliberate trigger: samplesRef is a ref and not a dependency itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments, pauses, captureRevision]);
+  }, [segments, pauses, captureRevision, streamLive]);
   // Read with the observation above, so the quality gate describes the capture analyzed (also a
   // recovered one whose audio is gone). It stays on this device: analysis requests never carry it.
   const analysisDescriptor = useMemo(() => captureDescriptorRef.current, [analysisRequest]);
@@ -99,7 +110,7 @@ export function useLiveAnalysis({
         ),
       };
     },
-    enabled: viewedSession === null,
+    enabled: viewedSession === null && !streamLive,
   });
 
   const isAnalyzing = analysisQuery.isFetching;
@@ -120,5 +131,41 @@ export function useLiveAnalysis({
     }
   }, [analysisQuery.data]);
 
-  return { analysisRequest, analysisQuery, isAnalyzing };
+  // Only what changed reaches the stream; it ignores calls when no capture run is streaming.
+  useEffect(() => {
+    if (viewedSession === null) analysisStream.sync(segments, pauses);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segments, pauses, viewedSession]);
+
+  /** Starts the incremental analysis of a capture run; its reports are the live report. */
+  function startAnalysisStream(runId: string, sessionStartedAt: string) {
+    analysisStream.start(runId, sessionStartedAt, (report) => {
+      const descriptor = captureDescriptorRef.current;
+      if (viewedSessionRef.current !== null || descriptor?.runId !== runId) return;
+      setReport(
+        withCaptureQuality(
+          report,
+          descriptor,
+          TRANSCRIPTION_TARGET_SAMPLE_RATE,
+          sampleRateRef.current > 0 ? capturedSampleCountRef.current / sampleRateRef.current : 0,
+        ),
+      );
+      setReportRun({
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        analyzer: {
+          producer: "desktopNative",
+          algorithm: "analysis_stream",
+          version: report.analyzerVersion ?? null,
+        },
+        usedAudio: false,
+        audioId: null,
+        // A provisional live report; the batch run after Stop identifies its input.
+        inputId: UNKNOWN_INPUT_ID,
+        transcription: transcriptModelRef.current,
+      });
+    });
+  }
+
+  return { analysisRequest, analysisQuery, isAnalyzing, startAnalysisStream };
 }

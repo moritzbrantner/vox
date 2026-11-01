@@ -88,6 +88,8 @@ type RecordingDeps = Pick<
     | "setAsideUnsavedCapture"
   > & {
     voiceActivity: Pick<ReturnType<typeof useVoiceActivity>, "start" | "push" | "seal" | "finish">;
+    /** Starts the incremental analysis of a new capture run. */
+    startAnalysisStream: (runId: string, sessionStartedAt: string) => void;
   };
 
 /** A recording run: microphone, browser recognition, level and pauses, and finishing the capture. */
@@ -143,6 +145,7 @@ export function useRecording({
   canSetAsideWorkspaceCapture,
   setAsideUnsavedCapture,
   voiceActivity,
+  startAnalysisStream,
 }: RecordingDeps) {
   const [isMatchingVoice, setIsMatchingVoice] = useState(false);
 
@@ -231,6 +234,7 @@ export function useRecording({
       });
       setAsideUnsavedCapture();
       startedAtRef.current = new Date();
+      startAnalysisStream(captureDescriptorRef.current.runId, startedAtRef.current.toISOString());
       activeSessionIdRef.current = null;
       takeWorkspaceCapture(captureId, null);
       lastFinalEndRef.current = 0;

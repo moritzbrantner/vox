@@ -131,6 +131,11 @@ export type AnalysisReport = {
    */
   voiceActivity?: import("./voiceActivity").VoiceActivityEvidence;
   /**
+   * How the incremental analysis during recording compared with this batch analysis of the same
+   * final transcript and pauses (desktop only). Absent for runs not made right after a capture.
+   */
+  liveAnalysis?: import("./liveAnalysis").LiveAnalysisEvidence;
+  /**
    * Native analysis only: observations that events cite, plus explicit missing channels.
    * Absent from the shared fallback and older reports, which do not produce typed evidence.
    */
@@ -1289,3 +1294,4 @@ export * from "./transcriptRevisions";
 export * from "./consent";
 export * from "./evidenceExport";
 export * from "./voiceActivity";
+export * from "./liveAnalysis";

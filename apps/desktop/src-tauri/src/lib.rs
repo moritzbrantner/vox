@@ -1,3 +1,4 @@
+pub mod analysis_stream;
 #[cfg(test)]
 mod asr_bench;
 mod corpus;
@@ -33,6 +34,10 @@ pub mod capture {
 
 use std::collections::BTreeMap;
 
+use analysis_stream::{
+    AnalysisStreamState, StreamFinishRequest, StreamFinished, StreamPushRequest,
+    StreamStartRequest, StreamUpdate,
+};
 use corpus::{
     backfill_speech_corpus_capture_quality_impl, delete_speech_corpus_session_impl,
     export_speech_corpus_impl, load_speech_corpus_impl, replace_speech_corpus_sessions_impl,
@@ -102,6 +107,32 @@ async fn voice_activity_finish(
             Err(format!("no voice activity run {}", request.run_id))
         }
     }
+}
+
+/// Starts the incremental analysis of a capture run; a previous run's stream is dropped.
+#[tauri::command]
+async fn analysis_stream_start(
+    state: tauri::State<'_, AnalysisStreamState>,
+    request: StreamStartRequest,
+) -> Result<(), String> {
+    analysis_stream::start_active(&state, &request)
+}
+
+#[tauri::command]
+async fn analysis_stream_push(
+    state: tauri::State<'_, AnalysisStreamState>,
+    request: StreamPushRequest,
+) -> Result<StreamUpdate, String> {
+    analysis_stream::push_active(&state, request)
+}
+
+/// Ends the run and compares its report with the batch report of the final observation.
+#[tauri::command]
+async fn analysis_stream_finish(
+    state: tauri::State<'_, AnalysisStreamState>,
+    request: StreamFinishRequest,
+) -> Result<StreamFinished, String> {
+    analysis_stream::finish_active(&state, request)
 }
 
 /// Silero over a finished capture.
@@ -406,6 +437,7 @@ pub fn run() {
             configure_media_permissions(app);
             app.manage(AppStorage(open_app_storage(app)));
             app.manage(LiveVoiceActivityState::default());
+            app.manage(AnalysisStreamState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -438,7 +470,10 @@ pub fn run() {
             voice_activity_start,
             voice_activity_push,
             voice_activity_finish,
-            analyze_voice_activity
+            analyze_voice_activity,
+            analysis_stream_start,
+            analysis_stream_push,
+            analysis_stream_finish
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stutter Tracker");
