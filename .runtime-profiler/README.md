@@ -1,6 +1,6 @@
 # Speech-analysis runtime evidence
 
-These scenarios profile the product-owned analysis path with deterministic synthetic input. They are not correctness benchmarks; stuttering correctness belongs to `packages/stutter-bench`.
+These scenarios profile the product-owned analysis path with deterministic synthetic input. They are not correctness benchmarks; stuttering correctness belongs to the Rust benchmark boundary (`apps/desktop/src-tauri/src/stutter_bench.rs`, `bun run benchmark:stutter` and `benchmark:stutter:corpus`), and whole-workflow budgets on real recordings (record, review, import; desktop and browser) to [`docs/benchmarks/runtime-budgets.md`](../docs/benchmarks/runtime-budgets.md).
 
 ## Scenarios
 
@@ -18,7 +18,7 @@ STUTTER_NATIVE_WORKER=apps/desktop/src-tauri/target/release/compute-worker \
 
 `scripts/profile-domain-metrics.py` repeats the same declared workload and writes a sibling `*.domain.json` sidecar with distributions for analysis elapsed time, real-time factor, event count, word count, and analyzed-audio duration. The sidecar records the source revision and scenario target, while the profiler bundle remains the authoritative environment/process artifact.
 
-There is intentionally no scenario called `streaming`: the current Rust API is session/batch analysis. A streaming scenario should only be added after a real incremental audio-analysis interface exists rather than benchmarking a fake loop and calling it realtime evidence.
+There is intentionally no scenario called `streaming`: these scenarios time one batch call. Live, incremental analysis (vox#38, vox#154) and live speech detection are measured per update, with deterministic work counters, by `bun run benchmark:runtime-budgets` on real recordings ([`docs/benchmarks/runtime-budgets.md`](../docs/benchmarks/runtime-budgets.md)).
 
 ## Capture
 

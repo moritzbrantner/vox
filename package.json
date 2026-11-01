@@ -29,6 +29,7 @@
     "benchmark:stutter": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml stutter_bench -- --nocapture",
     "benchmark:stutter:corpus": "cargo run --release --manifest-path apps/desktop/src-tauri/Cargo.toml --bin stutter-eval --",
     "benchmark:asr": "cargo run --release --manifest-path apps/desktop/src-tauri/Cargo.toml --bin asr-eval --",
+    "benchmark:runtime-budgets": "bun scripts/runtime-budgets.ts",
     "benchmark:asr:contract": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib asr_bench",
     "transcribe:youtube": "python3 scripts/transcribe-youtube.py",
     "build": "turbo run build",
