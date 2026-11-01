@@ -40,6 +40,7 @@ use crate::speech_analysis::{
 use crate::speech_pipeline::analyze_speech_session;
 use crate::voice_activity::{
     analyze_finite, FiniteRequest, LivePushRequest, LiveStartRequest, LiveVoiceActivity, VadStatus,
+    VAD_SAMPLE_RATE,
 };
 
 /// The web view's session list key; the app keeps at most this many sessions in it.
@@ -173,7 +174,10 @@ pub struct RecordCounters {
     pub voice_activity: String,
     pub vad_chunks: u64,
     pub vad_spans_live: u64,
-    pub vad_spans_finite: u64,
+    /// Finite Silero passes on Stop: 0 when the live run covered the capture.
+    pub vad_finite_runs: u64,
+    /// 16 kHz samples Silero analyzed for this capture, live and on Stop: one pass.
+    pub vad_silero_samples: u64,
     pub stream: WorkCounters,
     pub stream_parity: String,
     pub report_events: u64,
@@ -428,11 +432,19 @@ fn record(
     let stop = Instant::now();
     let finished_vad = vad.finish();
     vad_spans_live += finished_vad.finalized.len() as u64;
+    // As the app's Stop (`useVoiceActivity.finish`): a clean live run is the evidence; the
+    // finite pass runs only when live detection did not analyze the whole capture.
     let finite_started = Instant::now();
-    let finite = analyze_finite(&FiniteRequest {
-        samples: recording.samples.clone(),
-        sample_rate: rate,
-    })?;
+    let mut silero_samples = finished_vad.silero_samples;
+    let mut vad_finite_runs = 0;
+    if finished_vad.status != VadStatus::Detected {
+        let finite = analyze_finite(&FiniteRequest {
+            samples: recording.samples.clone(),
+            sample_rate: rate,
+        })?;
+        silero_samples += finite.silero_samples;
+        vad_finite_runs = 1;
+    }
     let stop_vad_finite_ms = finite_started.elapsed().as_secs_f64() * 1_000.0;
     let finish_started = Instant::now();
     let finished = stream.finish(StreamFinishRequest {
@@ -516,7 +528,8 @@ fn record(
             },
             vad_chunks: recording.samples.len().div_ceil(RECORDER_CHUNK) as u64,
             vad_spans_live,
-            vad_spans_finite: finite.segments.len() as u64,
+            vad_finite_runs,
+            vad_silero_samples: silero_samples,
             stream: finished.work.clone(),
             stream_parity: match &finished.parity {
                 StreamParity::Match { .. } => "match".into(),
@@ -696,6 +709,18 @@ pub fn record_violations(id: &str, counters: &RecordCounters) -> Vec<String> {
         counters.stream_parity == "match",
         format!("live analysis parity {}", counters.stream_parity),
     );
+    if counters.voice_activity == "detected" {
+        // Silero sees the capture once: live, never again on Stop (vox#158).
+        let one_pass = (counters.audio_samples * u64::from(VAD_SAMPLE_RATE))
+            .div_ceil(u64::from(counters.sample_rate));
+        check(
+            counters.vad_silero_samples == one_pass,
+            format!(
+                "Silero analyzed {} samples for a {one_pass}-sample capture ({} finite passes)",
+                counters.vad_silero_samples, counters.vad_finite_runs
+            ),
+        );
+    }
     let window = (ACOUSTIC_WINDOW_SECONDS * f64::from(counters.sample_rate)) as u64;
     check(
         counters.acoustic_samples <= counters.audio_samples.min(window) + 1,

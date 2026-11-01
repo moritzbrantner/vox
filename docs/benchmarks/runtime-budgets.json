@@ -47,7 +47,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1173,
         "vadSpansLive": 41,
-        "vadSpansFinite": 41,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2401280,
         "stream": {
           "updates": 63,
           "noOpUpdates": 0,
@@ -86,7 +87,8 @@
         "voiceActivity": "detected",
         "vadChunks": 998,
         "vadSpansLive": 64,
-        "vadSpansFinite": 64,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2042880,
         "stream": {
           "updates": 41,
           "noOpUpdates": 0,
@@ -125,7 +127,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1015,
         "vadSpansLive": 58,
-        "vadSpansFinite": 58,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2078651,
         "stream": {
           "updates": 92,
           "noOpUpdates": 0,
@@ -164,7 +167,8 @@
         "voiceActivity": "detected",
         "vadChunks": 999,
         "vadSpansLive": 44,
-        "vadSpansFinite": 44,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2045214,
         "stream": {
           "updates": 88,
           "noOpUpdates": 0,
@@ -203,7 +207,8 @@
         "voiceActivity": "detected",
         "vadChunks": 943,
         "vadSpansLive": 58,
-        "vadSpansFinite": 58,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1931195,
         "stream": {
           "updates": 68,
           "noOpUpdates": 0,
@@ -242,7 +247,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1045,
         "vadSpansLive": 53,
-        "vadSpansFinite": 53,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2139951,
         "stream": {
           "updates": 108,
           "noOpUpdates": 0,
@@ -281,7 +287,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1067,
         "vadSpansLive": 45,
-        "vadSpansFinite": 45,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2183428,
         "stream": {
           "updates": 58,
           "noOpUpdates": 0,
@@ -320,7 +327,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1070,
         "vadSpansLive": 51,
-        "vadSpansFinite": 51,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2190106,
         "stream": {
           "updates": 55,
           "noOpUpdates": 0,
@@ -359,7 +367,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1209,
         "vadSpansLive": 74,
-        "vadSpansFinite": 74,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2474319,
         "stream": {
           "updates": 53,
           "noOpUpdates": 0,
@@ -398,7 +407,8 @@
         "voiceActivity": "detected",
         "vadChunks": 956,
         "vadSpansLive": 54,
-        "vadSpansFinite": 54,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1956049,
         "stream": {
           "updates": 60,
           "noOpUpdates": 0,
@@ -437,7 +447,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1026,
         "vadSpansLive": 66,
-        "vadSpansFinite": 66,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2100942,
         "stream": {
           "updates": 107,
           "noOpUpdates": 0,
@@ -476,7 +487,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1021,
         "vadSpansLive": 64,
-        "vadSpansFinite": 64,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2089796,
         "stream": {
           "updates": 47,
           "noOpUpdates": 0,
@@ -515,7 +527,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1121,
         "vadSpansLive": 47,
-        "vadSpansFinite": 47,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2294968,
         "stream": {
           "updates": 68,
           "noOpUpdates": 0,
@@ -554,7 +567,8 @@
         "voiceActivity": "detected",
         "vadChunks": 953,
         "vadSpansLive": 55,
-        "vadSpansFinite": 55,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1950476,
         "stream": {
           "updates": 76,
           "noOpUpdates": 0,
@@ -593,7 +607,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1217,
         "vadSpansLive": 35,
-        "vadSpansFinite": 35,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2491037,
         "stream": {
           "updates": 92,
           "noOpUpdates": 0,
@@ -632,7 +647,8 @@
         "voiceActivity": "detected",
         "vadChunks": 969,
         "vadSpansLive": 43,
-        "vadSpansFinite": 43,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1983913,
         "stream": {
           "updates": 70,
           "noOpUpdates": 0,
@@ -671,7 +687,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1043,
         "vadSpansLive": 56,
-        "vadSpansFinite": 56,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2134378,
         "stream": {
           "updates": 72,
           "noOpUpdates": 0,
@@ -710,7 +727,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1603,
         "vadSpansLive": 75,
-        "vadSpansFinite": 75,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 3281920,
         "stream": {
           "updates": 113,
           "noOpUpdates": 0,
@@ -749,7 +767,8 @@
         "voiceActivity": "detected",
         "vadChunks": 953,
         "vadSpansLive": 56,
-        "vadSpansFinite": 56,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1950476,
         "stream": {
           "updates": 38,
           "noOpUpdates": 0,
@@ -788,7 +807,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1035,
         "vadSpansLive": 51,
-        "vadSpansFinite": 51,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2117660,
         "stream": {
           "updates": 83,
           "noOpUpdates": 0,
@@ -827,7 +847,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1007,
         "vadSpansLive": 55,
-        "vadSpansFinite": 55,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2061932,
         "stream": {
           "updates": 76,
           "noOpUpdates": 0,
@@ -866,7 +887,8 @@
         "voiceActivity": "detected",
         "vadChunks": 983,
         "vadSpansLive": 70,
-        "vadSpansFinite": 70,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2011777,
         "stream": {
           "updates": 72,
           "noOpUpdates": 0,
@@ -905,7 +927,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1285,
         "vadSpansLive": 68,
-        "vadSpansFinite": 68,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2630357,
         "stream": {
           "updates": 68,
           "noOpUpdates": 0,
@@ -944,7 +967,8 @@
         "voiceActivity": "detected",
         "vadChunks": 945,
         "vadSpansLive": 44,
-        "vadSpansFinite": 44,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1933758,
         "stream": {
           "updates": 75,
           "noOpUpdates": 0,
@@ -983,7 +1007,8 @@
         "voiceActivity": "detected",
         "vadChunks": 972,
         "vadSpansLive": 67,
-        "vadSpansFinite": 67,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1989486,
         "stream": {
           "updates": 76,
           "noOpUpdates": 0,
@@ -1022,7 +1047,8 @@
         "voiceActivity": "detected",
         "vadChunks": 950,
         "vadSpansLive": 51,
-        "vadSpansFinite": 51,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1944904,
         "stream": {
           "updates": 33,
           "noOpUpdates": 0,
@@ -1061,7 +1087,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1026,
         "vadSpansLive": 64,
-        "vadSpansFinite": 64,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2100942,
         "stream": {
           "updates": 36,
           "noOpUpdates": 0,
@@ -1100,7 +1127,8 @@
         "voiceActivity": "detected",
         "vadChunks": 1198,
         "vadSpansLive": 59,
-        "vadSpansFinite": 59,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 2452027,
         "stream": {
           "updates": 50,
           "noOpUpdates": 0,
@@ -1139,7 +1167,8 @@
         "voiceActivity": "detected",
         "vadChunks": 956,
         "vadSpansLive": 41,
-        "vadSpansFinite": 41,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1956049,
         "stream": {
           "updates": 34,
           "noOpUpdates": 0,
@@ -1178,7 +1207,8 @@
         "voiceActivity": "detected",
         "vadChunks": 945,
         "vadSpansLive": 47,
-        "vadSpansFinite": 47,
+        "vadFiniteRuns": 0,
+        "vadSileroSamples": 1933758,
         "stream": {
           "updates": 62,
           "noOpUpdates": 0,

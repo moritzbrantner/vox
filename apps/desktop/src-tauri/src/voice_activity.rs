@@ -279,6 +279,8 @@ pub struct LiveUpdate {
     pub reason: Option<String>,
     /// Silero processing time of this update.
     pub processing_ms: f64,
+    /// 16 kHz samples Silero has analyzed in this run so far.
+    pub silero_samples: u64,
 }
 
 /// One capture's live voice activity.
@@ -292,6 +294,7 @@ pub struct LiveVoiceActivity {
     reason: Option<String>,
     last: Option<(u64, f64, f64, f64)>,
     resampled: Vec<f32>,
+    silero_samples: u64,
 }
 
 impl LiveVoiceActivity {
@@ -327,6 +330,7 @@ impl LiveVoiceActivity {
                 reason,
                 last: None,
                 resampled: Vec::new(),
+                silero_samples: 0,
             },
             started,
         ))
@@ -360,6 +364,7 @@ impl LiveVoiceActivity {
             if let Some(stream) = self.stream.as_mut() {
                 match stream.push(&self.resampled) {
                     Ok(update) => {
+                        self.silero_samples += self.resampled.len() as u64;
                         self.last = Some((
                             update.revision,
                             update.analyzed_seconds,
@@ -388,6 +393,7 @@ impl LiveVoiceActivity {
                     .and_then(|first| stream.finish().map(|last| (first, last)));
                 match result {
                     Ok((first, last)) => {
+                        self.silero_samples += self.resampled.len() as u64;
                         self.last = Some((
                             last.revision,
                             last.analyzed_seconds,
@@ -441,6 +447,7 @@ impl LiveVoiceActivity {
             finished,
             reason: self.reason.clone(),
             processing_ms: started.elapsed().as_secs_f64() * 1000.0,
+            silero_samples: self.silero_samples,
         }
     }
 }
@@ -471,6 +478,8 @@ pub struct FiniteResult {
     pub segments: Vec<SpeechSpan>,
     pub capture_metrics: CaptureMetrics,
     pub processing_ms: f64,
+    /// 16 kHz samples Silero analyzed (0 when it did not run).
+    pub silero_samples: u64,
 }
 
 pub fn analyze_finite(request: &FiniteRequest) -> Result<FiniteResult, String> {
@@ -491,12 +500,22 @@ pub fn analyze_finite(request: &FiniteRequest) -> Result<FiniteResult, String> {
         })?;
         Ok((provider, detector_run(&mut detector, request)))
     });
-    let (status, provider, reason, segments) = match result {
-        Ok((provider, Ok(segments))) => (VadStatus::Detected, Some(provider), None, segments),
-        Ok((provider, Err(reason))) => {
-            (VadStatus::Failed, Some(provider), Some(reason), Vec::new())
-        }
-        Err(reason) => (VadStatus::Unavailable, None, Some(reason), Vec::new()),
+    let (status, provider, reason, segments, silero_samples) = match result {
+        Ok((provider, Ok((segments, analyzed)))) => (
+            VadStatus::Detected,
+            Some(provider),
+            None,
+            segments,
+            analyzed,
+        ),
+        Ok((provider, Err(reason))) => (
+            VadStatus::Failed,
+            Some(provider),
+            Some(reason),
+            Vec::new(),
+            0,
+        ),
+        Err(reason) => (VadStatus::Unavailable, None, Some(reason), Vec::new(), 0),
     };
     Ok(FiniteResult {
         status,
@@ -506,19 +525,21 @@ pub fn analyze_finite(request: &FiniteRequest) -> Result<FiniteResult, String> {
         segments,
         capture_metrics,
         processing_ms: started.elapsed().as_secs_f64() * 1000.0,
+        silero_samples,
     })
 }
 
+/// Silero's spans over the request and the 16 kHz samples it analyzed.
 fn detector_run(
     detector: &mut SileroVadTranscriptionProvider,
     request: &FiniteRequest,
-) -> Result<Vec<SpeechSpan>, String> {
+) -> Result<(Vec<SpeechSpan>, u64), String> {
     let resampled = resample_to_vad_rate(&request.samples, request.sample_rate)?;
     let audio =
         SpeakerAudio::mono(&resampled, VAD_SAMPLE_RATE).map_err(|error| error.to_string())?;
     detector
         .detect_speech(&audio, &VadOptions::default())
-        .map(|response| response.segments)
+        .map(|response| (response.segments, resampled.len() as u64))
         .map_err(|error| error.to_string())
 }
 
@@ -688,6 +709,8 @@ mod tests {
             eprintln!("chunk {chunk}: slowest update {slowest:.2} ms");
             assert_eq!(spans, finite.segments, "chunk {chunk}");
             assert_eq!(last.capture_metrics, finite.capture_metrics);
+            // Live Silero saw exactly the samples the finite pass would: Stop can reuse it.
+            assert_eq!(last.silero_samples, finite.silero_samples, "chunk {chunk}");
         }
     }
 }
