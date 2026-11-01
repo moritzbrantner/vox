@@ -5,8 +5,8 @@
 // - record: the transcript and the recorder's pauses through the on-device incremental analysis
 //   stream as they arrive (each segment partial first, then final); Stop (the stream's finish
 //   with its batch oracle, then the batch analysis with the last 90 s of audio that becomes the
-//   saved report); Save (the session list into localStorage, the kept audio into IndexedDB, the
-//   local corpus analysis). Speech detection is unavailable off the desktop.
+//   saved report); Save (the session's value and the id list into localStorage, the kept audio
+//   into IndexedDB, the local corpus analysis). Speech detection is unavailable off the desktop.
 // - review: loading and validating every saved session, the corpus analysis, then each session's
 //   kept audio.
 // - import: an encrypted backup of every session decrypted, validated and restored.
@@ -28,6 +28,8 @@ import {
   loadSessionsFromStorage,
   replaceStoredSessions,
   saveSessionsToStorage,
+  SESSION_KEY_PREFIX,
+  STORE_KEY,
 } from "../storage/localStorage";
 import { createSessionBackup, parseSessionBackup } from "../storage/sessionBackup";
 import { getSessionAudio, putSessionAudio, retainSessionAudio } from "../storage/sessionAudio";
@@ -66,8 +68,12 @@ export type RecordCounters = {
   reportEvents: number;
   /** Samples handed to the batch analysis (the last 90 s, resampled to 16 kHz). */
   acousticSamples: number;
-  /** UTF-16 code units of the whole session list written to localStorage on Save. */
-  savedSessionListChars: number;
+  /**
+   * UTF-16 code units written to localStorage on Save: session values (the saved session only)
+   * and the id list, the one part that depends on the sessions saved before (vox#157).
+   */
+  savedSessionChars: number;
+  savedSessionIndexChars: number;
   savedSessionsInList: number;
   savedAudioSamples: number;
   corpusSessions: number;
@@ -307,9 +313,10 @@ async function record(
   sessions.unshift(session);
   sessions.splice(MAX_SAVED_SESSIONS);
   const listStarted = performance.now();
-  saveSessionsToStorage(sessions, storage);
+  const writes = storage instanceof CountingStorage ? storage : new CountingStorage(storage);
+  writes.reset();
+  saveSessionsToStorage(sessions, writes);
   const saveListMs = performance.now() - listStarted;
-  const savedSessionListChars = storage.getItem("stutter-tracker:sessions")?.length ?? 0;
   const audioStarted = performance.now();
   await putSessionAudio({
     sessionId: session.id,
@@ -339,7 +346,8 @@ async function record(
     streamParity: finished.parity.state,
     reportEvents: analyzed.report.events.length,
     acousticSamples: audio.samples?.length ?? 0,
-    savedSessionListChars,
+    savedSessionChars: writes.sessionChars,
+    savedSessionIndexChars: writes.indexChars,
     savedSessionsInList: sessions.length,
     savedAudioSamples: recording.samples.length,
     corpusSessions: corpus.stats.sessions,
@@ -415,8 +423,11 @@ export async function runBrowserWorkflows(
   load: (index: number) => Promise<BenchRecording>,
   options: BenchOptions,
 ): Promise<BrowserReport> {
-  const storage = options.storage ?? localStorage;
-  storage.clear();
+  const plain = options.storage ?? localStorage;
+  plain.clear();
+  // Recording and import run in one app run; review opens the app again (`appOpened`).
+  const storage = new CountingStorage(plain);
+  options = { ...options, storage };
   await retainSessionAudio([]);
   const sessions: SavedSession[] = [];
   const recordings: BrowserReport["recordings"] = [];
@@ -429,7 +440,9 @@ export async function runBrowserWorkflows(
 
   await options.mark?.("review:start");
   const openStarted = performance.now();
-  const loaded = loadSessionsFromStorage(storage);
+  // A new app run has parsed nothing yet: a storage object it has not read through.
+  const appOpened = new CountingStorage(plain);
+  const loaded = loadSessionsFromStorage(appOpened);
   const corpusStarted = performance.now();
   const corpus = analyzeLocalCorpus(loaded);
   const corpusMs = performance.now() - corpusStarted;
@@ -450,7 +463,7 @@ export async function runBrowserWorkflows(
   const review: BrowserReport["review"] = [
     {
       sessionsLoaded: loaded.length,
-      sessionListChars: storage.getItem("stutter-tracker:sessions")?.length ?? 0,
+      sessionListChars: storedSessionChars(plain),
       corpusSessions: corpus.stats.sessions,
       audioOpened,
       audioSamplesRead,
@@ -504,4 +517,55 @@ export async function runBrowserWorkflows(
     ],
     violations,
   };
+}
+
+/** The stored session values and id list, in UTF-16 code units. */
+function storedSessionChars(storage: Storage) {
+  let chars = 0;
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key === STORE_KEY || key?.startsWith(SESSION_KEY_PREFIX)) {
+      chars += storage.getItem(key)?.length ?? 0;
+    }
+  }
+  return chars;
+}
+
+/** Storage that counts what is written to session values and the id list since `reset`. */
+class CountingStorage implements Storage {
+  sessionChars = 0;
+  indexChars = 0;
+
+  constructor(private readonly inner: Storage) {}
+
+  reset() {
+    this.sessionChars = 0;
+    this.indexChars = 0;
+  }
+
+  get length() {
+    return this.inner.length;
+  }
+
+  clear() {
+    this.inner.clear();
+  }
+
+  getItem(key: string) {
+    return this.inner.getItem(key);
+  }
+
+  key(index: number) {
+    return this.inner.key(index);
+  }
+
+  removeItem(key: string) {
+    this.inner.removeItem(key);
+  }
+
+  setItem(key: string, value: string) {
+    this.inner.setItem(key, value);
+    if (key === STORE_KEY) this.indexChars += value.length;
+    else if (key.startsWith(SESSION_KEY_PREFIX)) this.sessionChars += value.length;
+  }
 }

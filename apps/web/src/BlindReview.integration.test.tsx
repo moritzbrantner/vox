@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
 const STORE_KEY = "stutter-tracker:sessions";
 
@@ -76,7 +77,7 @@ const SESSIONS = [
   session("s-assisted", "I I want tea", "2026-05-19T10:00:00.000Z", true),
   session("s-plain", "I I want coffee", "2026-05-20T10:00:00.000Z", false),
 ];
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+const stored = () => (storedSessions() ?? []) as SavedSession[];
 
 afterEach(() => {
   localStorage.clear();

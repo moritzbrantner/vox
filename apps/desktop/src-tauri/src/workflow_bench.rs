@@ -6,8 +6,9 @@
 //!   pauses through the incremental analysis stream as they arrive (each segment partial first,
 //!   then final), then Stop (live voice activity finished, Silero over the whole capture, the
 //!   stream's finish with its batch oracle, the batch analysis with audio that becomes the saved
-//!   report), then Save (the session list into protected storage, the kept audio, the speech
-//!   corpus document and its analysis).
+//!   report), then Save (the session's value and the session index into protected storage, the
+//!   kept audio, the session's speech corpus entry), then the corpus analysis the app asks for
+//!   after Save, off its path.
 //! - **review**: opening the app on the saved store (every web entry unsealed, the corpus loaded
 //!   and analyzed), then opening each session's kept audio.
 //! - **import**: replacing the store with a backup's sessions (session list, corpus, kept audio
@@ -29,11 +30,10 @@ use crate::analysis_stream::{
     AnalysisStream, StreamFinishRequest, StreamParity, StreamPushRequest, StreamStartRequest,
     WorkCounters,
 };
-use crate::corpus::{
-    load_speech_corpus_impl, replace_speech_corpus_sessions_impl, save_speech_corpus_session_impl,
-    CorpusSessionInput,
+use crate::corpus::{CorpusFiles, CorpusSessionInput, SpeechCorpus};
+use crate::protected_store::{
+    Namespace, ProtectedStore, StoreDocument, StoreEntries, SPEECH_CORPUS_DOCUMENT,
 };
-use crate::protected_store::{Namespace, ProtectedStore, StoreDocument, SPEECH_CORPUS_DOCUMENT};
 use crate::speech_analysis::{
     timed_tokens, AnalyzeSpeechRequest, PauseInput, TranscriptSegmentInput,
 };
@@ -43,8 +43,10 @@ use crate::voice_activity::{
     VAD_SAMPLE_RATE,
 };
 
-/// The web view's session list key; the app keeps at most this many sessions in it.
+/// The web view's session index (the saved sessions' ids, newest first); the app keeps at most
+/// this many sessions. Each session is its own value under `SESSION_KEY_PREFIX` + id.
 pub const SESSIONS_KEY: &str = "stutter-tracker:sessions";
+pub const SESSION_KEY_PREFIX: &str = "stutter-tracker:session:";
 pub const MAX_SAVED_SESSIONS: usize = 50;
 /// Samples per recorder chunk (the web recorder's script-processor buffer).
 pub const RECORDER_CHUNK: usize = 2_048;
@@ -183,9 +185,11 @@ pub struct RecordCounters {
     pub report_events: u64,
     /// Audio the batch acoustic analysis read, in samples.
     pub acoustic_samples: u64,
-    /// Bytes handed to the protected store on Save: the whole session list, the kept audio and
-    /// the whole corpus document.
-    pub saved_session_list_bytes: u64,
+    /// Bytes handed to the protected store on Save: the session's own value, the session index
+    /// (ids only), the kept audio and the session's corpus entry. Only the index depends on the
+    /// sessions saved before, by one id each (vox#157).
+    pub saved_session_bytes: u64,
+    pub saved_session_index_bytes: u64,
     pub saved_sessions_in_list: u64,
     pub saved_audio_bytes: u64,
     pub saved_corpus_bytes: u64,
@@ -203,6 +207,8 @@ pub struct RecordTimings {
     pub stop_batch_ms: f64,
     pub save_ms: f64,
     pub save_corpus_ms: f64,
+    /// The corpus analysis the app asks for after Save, off its path.
+    pub corpus_analysis_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -279,32 +285,43 @@ pub fn run(
     fs::create_dir_all(&options.store_root).map_err(|error| error.to_string())?;
     let store =
         ProtectedStore::with_key(&options.store_root, &[7; 32]).map_err(|e| e.to_string())?;
-    let corpus = StoreDocument::Protected {
+    let entries = StoreEntries::Protected {
+        store: &store,
+        namespace: Namespace::Corpus,
+    };
+    let legacy = StoreDocument::Protected {
         store: &store,
         name: SPEECH_CORPUS_DOCUMENT,
+    };
+    let files = CorpusFiles {
+        sessions: &entries,
+        legacy: &legacy,
     };
 
     let meter = PhaseMeter::start();
     let mut sessions: Vec<Value> = Vec::new();
     let mut recorded = Vec::new();
+    // The app run's corpus: read once, kept in step with each save.
+    let mut corpus = SpeechCorpus::default();
     for (index, recording) in recordings.into_iter().enumerate() {
         recorded.push(record(
             &recording?,
             index,
             options,
             &store,
-            &corpus,
+            (&mut corpus, &files),
             &mut sessions,
         )?);
     }
     let record_phase = meter.stop();
 
+    // Review and import start a new app run, which reads the corpus again.
     let meter = PhaseMeter::start();
-    let review = review(&store, &corpus, &sessions)?;
+    let review = review(&store, &files, &sessions)?;
     let review_phase = meter.stop();
 
     let meter = PhaseMeter::start();
-    let import = import(&store, &corpus, &sessions)?;
+    let import = import(&store, &files, &sessions)?;
     let import_phase = meter.stop();
 
     let mut violations = Vec::new();
@@ -339,7 +356,7 @@ fn record(
     index: usize,
     options: &Options,
     store: &ProtectedStore,
-    corpus: &StoreDocument<'_>,
+    (corpus, files): (&mut SpeechCorpus, &CorpusFiles),
     sessions: &mut Vec<Value>,
 ) -> Result<RecordedSession, String> {
     let rate = recording.sample_rate;
@@ -494,24 +511,21 @@ fn record(
         "report": report_value,
     });
     sessions.insert(0, session.clone());
-    sessions.truncate(MAX_SAVED_SESSIONS);
-    let list = serde_json::to_vec(&sessions).map_err(|error| error.to_string())?;
-    store
-        .write(Namespace::Web, SESSIONS_KEY, &list)
-        .map_err(|error| error.to_string())?;
+    let dropped = sessions.split_off(sessions.len().min(MAX_SAVED_SESSIONS));
+    let (session_bytes, index_bytes) = write_sessions(store, &[&session], sessions, &dropped)?;
     let audio = encode_audio(&session_id, rate, &recording.samples);
     store
         .write(Namespace::Audio, &session_id, &audio)
         .map_err(|error| error.to_string())?;
     let corpus_started = Instant::now();
-    let analysis = save_speech_corpus_session_impl(corpus, corpus_input(&session)?)
-        .map_err(|error| error.to_string())?;
+    let corpus_bytes = corpus
+        .save(files, corpus_input(&session)?)
+        .map_err(|error| error.to_string())? as u64;
     let save_corpus_ms = corpus_started.elapsed().as_secs_f64() * 1_000.0;
     let save_ms = save_started.elapsed().as_secs_f64() * 1_000.0;
-    let corpus_bytes = store
-        .read(Namespace::Documents, SPEECH_CORPUS_DOCUMENT)
-        .map_err(|error| error.to_string())?
-        .map_or(0, |bytes| bytes.len() as u64);
+    let analysis_started = Instant::now();
+    let analysis = corpus.analysis(files).map_err(|error| error.to_string())?;
+    let corpus_analysis_ms = analysis_started.elapsed().as_secs_f64() * 1_000.0;
 
     Ok(RecordedSession {
         id: recording.id.clone(),
@@ -537,7 +551,8 @@ fn record(
             },
             report_events: report.events.len() as u64,
             acoustic_samples,
-            saved_session_list_bytes: list.len() as u64,
+            saved_session_bytes: session_bytes,
+            saved_session_index_bytes: index_bytes,
             saved_sessions_in_list: sessions.len() as u64,
             saved_audio_bytes: audio.len() as u64,
             saved_corpus_bytes: corpus_bytes,
@@ -552,13 +567,52 @@ fn record(
             stop_batch_ms,
             save_ms,
             save_corpus_ms,
+            corpus_analysis_ms,
         },
     })
 }
 
+/// The web view's session writes: each changed session's own value, the index of ids, and the
+/// removal of dropped sessions. Returns the bytes of the session values and of the index.
+fn write_sessions(
+    store: &ProtectedStore,
+    changed: &[&Value],
+    sessions: &[Value],
+    dropped: &[Value],
+) -> Result<(u64, u64), String> {
+    let key = |session: &Value| {
+        format!(
+            "{SESSION_KEY_PREFIX}{}",
+            session["id"].as_str().unwrap_or_default()
+        )
+    };
+    let mut session_bytes = 0;
+    for session in changed {
+        let value = serde_json::to_vec(session).map_err(|error| error.to_string())?;
+        session_bytes += value.len() as u64;
+        store
+            .write(Namespace::Web, &key(session), &value)
+            .map_err(|error| error.to_string())?;
+    }
+    let ids = sessions
+        .iter()
+        .map(|session| &session["id"])
+        .collect::<Vec<_>>();
+    let index = serde_json::to_vec(&ids).map_err(|error| error.to_string())?;
+    store
+        .write(Namespace::Web, SESSIONS_KEY, &index)
+        .map_err(|error| error.to_string())?;
+    for session in dropped {
+        store
+            .remove(Namespace::Web, &key(session))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok((session_bytes, index.len() as u64))
+}
+
 fn review(
     store: &ProtectedStore,
-    corpus: &StoreDocument<'_>,
+    files: &CorpusFiles,
     sessions: &[Value],
 ) -> Result<(ReviewCounters, ReviewTimings), String> {
     let mut counters = ReviewCounters::default();
@@ -569,7 +623,9 @@ fn review(
     counters.web_entries_unsealed = entries.len() as u64;
     counters.web_bytes_unsealed = entries.values().map(|value| value.len() as u64).sum();
     let corpus_started = Instant::now();
-    let analysis = load_speech_corpus_impl(corpus).map_err(|error| error.to_string())?;
+    let analysis = SpeechCorpus::default()
+        .analysis(files)
+        .map_err(|error| error.to_string())?;
     let corpus_load_ms = corpus_started.elapsed().as_secs_f64() * 1_000.0;
     counters.corpus_sessions_loaded = analysis.stats.sessions as u64;
     let app_open_ms = opened.elapsed().as_secs_f64() * 1_000.0;
@@ -598,21 +654,21 @@ fn review(
 
 fn import(
     store: &ProtectedStore,
-    corpus: &StoreDocument<'_>,
+    files: &CorpusFiles,
     sessions: &[Value],
 ) -> Result<(ImportCounters, ImportTimings), String> {
     let list_started = Instant::now();
-    let list = serde_json::to_vec(sessions).map_err(|error| error.to_string())?;
-    store
-        .write(Namespace::Web, SESSIONS_KEY, &list)
-        .map_err(|error| error.to_string())?;
+    let changed = sessions.iter().collect::<Vec<_>>();
+    let (session_bytes, index_bytes) = write_sessions(store, &changed, sessions, &[])?;
     let session_list_ms = list_started.elapsed().as_secs_f64() * 1_000.0;
     let corpus_started = Instant::now();
     let inputs = sessions
         .iter()
         .map(corpus_input)
         .collect::<Result<Vec<_>, _>>()?;
-    replace_speech_corpus_sessions_impl(corpus, inputs).map_err(|error| error.to_string())?;
+    SpeechCorpus::default()
+        .replace(files, inputs)
+        .map_err(|error| error.to_string())?;
     let corpus_ms = corpus_started.elapsed().as_secs_f64() * 1_000.0;
     let retain_started = Instant::now();
     let ids = sessions
@@ -623,14 +679,17 @@ fn import(
         .retain(Namespace::Audio, &ids)
         .map_err(|error| error.to_string())?;
     let retain_ms = retain_started.elapsed().as_secs_f64() * 1_000.0;
-    let corpus_bytes = store
-        .read(Namespace::Documents, SPEECH_CORPUS_DOCUMENT)
+    let corpus_bytes = files
+        .sessions
+        .entries()
         .map_err(|error| error.to_string())?
-        .map_or(0, |bytes| bytes.len() as u64);
+        .values()
+        .map(|entry| entry.len() as u64)
+        .sum();
     Ok((
         ImportCounters {
             sessions: sessions.len() as u64,
-            session_list_bytes: list.len() as u64,
+            session_list_bytes: session_bytes + index_bytes,
             corpus_bytes,
         },
         ImportTimings {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { createSessionBackup, parseSessionBackup } from "./storage/sessionBackup";
 import type { SavedSession, SpeechCorpusAnalysis } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 // Acceptance tests for issue #100: optional passphrase-encrypted session backups.
 // Export: the "Export" button opens a dialog named "Export sessions" with two optional password
@@ -239,11 +240,7 @@ function backupFile(json: string) {
 
 function seedStoredSessions(sessions: SavedSession[]) {
   localStorage.setItem(STORE_KEY, JSON.stringify(sessions));
-  return localStorage.getItem(STORE_KEY);
-}
-
-function storedSessions() {
-  return JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as SavedSession[] | null;
+  return storedSessionsSnapshot();
 }
 
 async function uploadBackup(json: string) {
@@ -628,7 +625,7 @@ describe("restoring an encrypted backup", () => {
       await settle();
 
       expect(confirm).not.toHaveBeenCalled();
-      expect(localStorage.getItem(STORE_KEY)).toBe(before);
+      expect(storedSessionsSnapshot()).toBe(before);
       expect(invocations(REPLACE_COMMAND)).toHaveLength(0);
       expect(reload).not.toHaveBeenCalled();
       expect(screen.getAllByTitle("Delete saved session")).toHaveLength(currentSessions.length);

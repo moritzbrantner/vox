@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { createSessionBackup, parseSessionBackup } from "./storage/sessionBackup";
 import type { SavedSession, SpeechCorpusAnalysis } from "./types";
+import { storedSessions, storedSessionsSnapshot } from "./test/storedSessions";
 
 // Acceptance tests for issue #86, decision (a) "replace all": a valid backup becomes the whole set
 // of saved sessions after one confirmation, serialized behind pending session mutations, written
@@ -155,11 +156,7 @@ function backupFile(json: string) {
 
 function seedStoredSessions(sessions: SavedSession[]) {
   localStorage.setItem(STORE_KEY, JSON.stringify(sessions));
-  return localStorage.getItem(STORE_KEY);
-}
-
-function storedSessions() {
-  return JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as SavedSession[] | null;
+  return storedSessionsSnapshot();
 }
 
 async function uploadBackup(json: string) {
@@ -273,7 +270,7 @@ describe("restore confirmation", () => {
     expect(message).toMatch(/will be lost/i);
 
     await settle();
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
     expect(reload).not.toHaveBeenCalled();
     expect(invocations(REPLACE_COMMAND)).toHaveLength(0);
   });
@@ -333,7 +330,7 @@ describe("serialized, all-or-nothing replace", () => {
     await findRestoreError(baseline);
     await settle();
 
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
     expect(reload).not.toHaveBeenCalled();
     // In-memory state is unchanged as well: the current sessions are still listed.
     expect(screen.getAllByTitle("Delete saved session")).toHaveLength(currentSessions.length);
@@ -373,7 +370,7 @@ describe("serialized, all-or-nothing replace", () => {
     await findRestoreError(baseline);
     await settle();
 
-    expect(localStorage.getItem(STORE_KEY)).toBe(before);
+    expect(storedSessionsSnapshot()).toBe(before);
     expect(reload).not.toHaveBeenCalled();
     expect(screen.getAllByTitle("Delete saved session")).toHaveLength(currentSessions.length);
   });
@@ -415,7 +412,7 @@ describe("invalid backups", () => {
       await settle();
 
       expect(confirm).not.toHaveBeenCalled();
-      expect(localStorage.getItem(STORE_KEY)).toBe(before);
+      expect(storedSessionsSnapshot()).toBe(before);
       expect(invocations(REPLACE_COMMAND)).toHaveLength(0);
       expect(reload).not.toHaveBeenCalled();
     },
@@ -435,7 +432,7 @@ describe("idempotence", () => {
     await uploadBackup(json);
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     await settle();
-    const afterFirst = localStorage.getItem(STORE_KEY);
+    const afterFirst = storedSessionsSnapshot();
     // The real app reloads after a restore; remount to start from the restored state.
     first.unmount();
 
@@ -444,7 +441,7 @@ describe("idempotence", () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(2));
     await settle();
 
-    expect(localStorage.getItem(STORE_KEY)).toBe(afterFirst);
+    expect(storedSessionsSnapshot()).toBe(afterFirst);
     expect(storedSessions()).toEqual(restoredSessions(json));
     const calls = invocations(REPLACE_COMMAND);
     expect(calls).toHaveLength(2);

@@ -45,6 +45,8 @@ pub enum Namespace {
     Web,
     /// Raw capture a user chose to keep with a saved session, keyed by session id.
     Audio,
+    /// The speech corpus, one entry per session id, so a save writes that session only.
+    Corpus,
 }
 
 impl Namespace {
@@ -53,6 +55,7 @@ impl Namespace {
             Namespace::Documents => "documents",
             Namespace::Web => "web",
             Namespace::Audio => "audio",
+            Namespace::Corpus => "corpus",
         }
     }
 }
@@ -178,7 +181,8 @@ impl ProtectedStore {
         }
     }
 
-    /// Every entry of a namespace by name. Only used for the small web namespace.
+    /// Every entry of a namespace by name. Used for the web namespace and the corpus, each read
+    /// once per app start.
     pub fn entries(&self, namespace: Namespace) -> StoreResult<BTreeMap<String, Vec<u8>>> {
         let mut entries = BTreeMap::new();
         for path in sealed_files(&self.root.join(namespace.directory()))? {
@@ -290,7 +294,12 @@ fn sealed_files(directory: &Path) -> io::Result<Vec<PathBuf>> {
 
 /// Whether anything was ever sealed under `root`, so a missing key must not start a fresh store.
 fn has_sealed_data(root: &Path) -> io::Result<bool> {
-    for namespace in [Namespace::Documents, Namespace::Web, Namespace::Audio] {
+    for namespace in [
+        Namespace::Documents,
+        Namespace::Web,
+        Namespace::Audio,
+        Namespace::Corpus,
+    ] {
         if !sealed_files(&root.join(namespace.directory()))?.is_empty() {
             return Ok(true);
         }
@@ -394,14 +403,36 @@ fn migrate_legacy_documents(store: &ProtectedStore, data_dir: &Path) -> StoreRes
         store.write(Namespace::Documents, name, &content)?;
         fs::remove_file(&path)?;
     }
+    let plain_corpus = data_dir.join(PLAIN_CORPUS_DIRECTORY);
+    for (name, content) in Entries::entries(&plain_corpus)? {
+        store.write(Namespace::Corpus, &name, &content)?;
+        Entries::remove(&plain_corpus, &name)?;
+    }
     Ok(())
 }
+
+/// Where plain-mode builds keep the corpus entries, next to the legacy corpus document.
+const PLAIN_CORPUS_DIRECTORY: &str = "speech-corpus";
 
 impl LocalStore {
     pub fn document(&self, name: &'static str) -> std::result::Result<StoreDocument<'_>, String> {
         match self {
             LocalStore::Protected { store, .. } => Ok(StoreDocument::Protected { store, name }),
             LocalStore::Plain { directory, .. } => Ok(StoreDocument::Plain(directory.join(name))),
+            LocalStore::Locked { reason } => Err(locked_message(reason)),
+        }
+    }
+
+    /// The speech corpus's per-session entries.
+    pub fn corpus_entries(&self) -> std::result::Result<StoreEntries<'_>, String> {
+        match self {
+            LocalStore::Protected { store, .. } => Ok(StoreEntries::Protected {
+                store,
+                namespace: Namespace::Corpus,
+            }),
+            LocalStore::Plain { directory, .. } => {
+                Ok(StoreEntries::Plain(directory.join(PLAIN_CORPUS_DIRECTORY)))
+            }
             LocalStore::Locked { reason } => Err(locked_message(reason)),
         }
     }
@@ -453,6 +484,132 @@ fn locked_message(reason: &str) -> String {
 pub trait Document {
     fn load(&self) -> io::Result<Option<Vec<u8>>>;
     fn save(&self, content: &[u8]) -> io::Result<()>;
+    /// Removes the file; a missing one is already removed.
+    fn remove(&self) -> io::Result<()>;
+}
+
+/// Named values, one file each, sealed or plain, each written atomically.
+pub trait Entries {
+    /// Every entry by name.
+    fn entries(&self) -> io::Result<BTreeMap<String, Vec<u8>>>;
+    fn put(&self, name: &str, content: &[u8]) -> io::Result<()>;
+    /// Removes one entry; a missing one is already removed.
+    fn remove(&self, name: &str) -> io::Result<()>;
+    /// Removes every entry whose name is not in `keep`.
+    fn retain(&self, keep: &BTreeSet<String>) -> io::Result<()>;
+}
+
+pub enum StoreEntries<'a> {
+    Protected {
+        store: &'a ProtectedStore,
+        namespace: Namespace,
+    },
+    /// A directory of plain files.
+    Plain(PathBuf),
+}
+
+impl Entries for StoreEntries<'_> {
+    fn entries(&self) -> io::Result<BTreeMap<String, Vec<u8>>> {
+        match self {
+            StoreEntries::Protected { store, namespace } => {
+                store.entries(*namespace).map_err(io::Error::other)
+            }
+            StoreEntries::Plain(directory) => directory.entries(),
+        }
+    }
+
+    fn put(&self, name: &str, content: &[u8]) -> io::Result<()> {
+        match self {
+            StoreEntries::Protected { store, namespace } => store
+                .write(*namespace, name, content)
+                .map_err(io::Error::other),
+            StoreEntries::Plain(directory) => directory.put(name, content),
+        }
+    }
+
+    fn remove(&self, name: &str) -> io::Result<()> {
+        match self {
+            StoreEntries::Protected { store, namespace } => {
+                store.remove(*namespace, name).map_err(io::Error::other)
+            }
+            StoreEntries::Plain(directory) => Entries::remove(directory, name),
+        }
+    }
+
+    fn retain(&self, keep: &BTreeSet<String>) -> io::Result<()> {
+        match self {
+            StoreEntries::Protected { store, namespace } => {
+                store.retain(*namespace, keep).map_err(io::Error::other)
+            }
+            StoreEntries::Plain(directory) => directory.retain(keep),
+        }
+    }
+}
+
+const PLAIN_ENTRY_EXTENSION: &str = "json";
+
+/// A directory of plain files named by the hex of the entry name, so any name is a safe and
+/// reversible file name.
+impl Entries for PathBuf {
+    fn entries(&self) -> io::Result<BTreeMap<String, Vec<u8>>> {
+        let mut entries = BTreeMap::new();
+        let listing = match fs::read_dir(self) {
+            Ok(listing) => listing,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(entries),
+            Err(error) => return Err(error),
+        };
+        for entry in listing {
+            let path = entry?.path();
+            if path
+                .extension()
+                .is_none_or(|extension| extension != PLAIN_ENTRY_EXTENSION)
+            {
+                continue;
+            }
+            let Some(name) = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(unhex)
+            else {
+                continue;
+            };
+            entries.insert(name, fs::read(&path)?);
+        }
+        Ok(entries)
+    }
+
+    fn put(&self, name: &str, content: &[u8]) -> io::Result<()> {
+        self.join(plain_entry_file(name)).save(content)
+    }
+
+    fn remove(&self, name: &str) -> io::Result<()> {
+        Document::remove(&self.join(plain_entry_file(name)))
+    }
+
+    fn retain(&self, keep: &BTreeSet<String>) -> io::Result<()> {
+        for name in self.entries()?.into_keys() {
+            if !keep.contains(&name) {
+                Entries::remove(self, &name)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn plain_entry_file(name: &str) -> String {
+    let hex: String = name.bytes().map(|byte| format!("{byte:02x}")).collect();
+    format!("{hex}.{PLAIN_ENTRY_EXTENSION}")
+}
+
+fn unhex(hex: &str) -> Option<String> {
+    if !hex.len().is_multiple_of(2) {
+        return None;
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(hex.get(index..index + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    String::from_utf8(bytes).ok()
 }
 
 pub enum StoreDocument<'a> {
@@ -479,6 +636,15 @@ impl Document for StoreDocument<'_> {
                 .write(Namespace::Documents, name, content)
                 .map_err(io::Error::other),
             StoreDocument::Plain(path) => path.save(content),
+        }
+    }
+
+    fn remove(&self) -> io::Result<()> {
+        match self {
+            StoreDocument::Protected { store, name } => store
+                .remove(Namespace::Documents, name)
+                .map_err(io::Error::other),
+            StoreDocument::Plain(path) => Document::remove(path),
         }
     }
 }
@@ -514,6 +680,13 @@ impl Document for PathBuf {
             return Err(error);
         }
         Ok(())
+    }
+
+    fn remove(&self) -> io::Result<()> {
+        match fs::remove_file(self) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -771,6 +944,27 @@ mod tests {
             Some(&b"corpus words"[..])
         );
         assert!(!contains(&all_bytes(&dir), b"corpus words"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn plain_corpus_entries_move_into_the_store() {
+        let dir = temp_dir("migrate-entries");
+        let plain = dir.join(PLAIN_CORPUS_DIRECTORY);
+        plain.put("session/1", b"first words").unwrap();
+        plain.put("session-2", b"second words").unwrap();
+        let local = open_local_store(&dir, &TestKeys::empty());
+
+        let entries = local.corpus_entries().unwrap().entries().unwrap();
+        assert_eq!(
+            entries,
+            BTreeMap::from([
+                ("session-2".to_owned(), b"second words".to_vec()),
+                ("session/1".to_owned(), b"first words".to_vec()),
+            ])
+        );
+        assert!(Entries::entries(&plain).unwrap().is_empty());
+        assert!(!contains(&all_bytes(&dir), b"first words"));
         let _ = fs::remove_dir_all(dir);
     }
 

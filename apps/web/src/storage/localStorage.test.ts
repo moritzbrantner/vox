@@ -10,9 +10,12 @@ import {
   replaceStoredSessions,
   normalizeSpeakerProfiles,
   saveRemoteConsent,
+  saveSessionsToStorage,
+  sessionKey,
   STORE_KEY,
   UNREADABLE_SESSIONS_KEY,
 } from "./localStorage";
+import type { SavedSession } from "../types";
 
 const legacySession = {
   id: "legacy-1",
@@ -191,9 +194,7 @@ describe("local storage helpers", () => {
       "legacy-1",
       "recoverable",
     ]);
-    expect(
-      (JSON.parse(storage.getItem(STORE_KEY) ?? "[]") as { id: string }[]).map((s) => s.id),
-    ).toEqual(["legacy-1", "recoverable"]);
+    expect(JSON.parse(storage.getItem(STORE_KEY) ?? "[]")).toEqual(["legacy-1", "recoverable"]);
     // The readable duplicate is dropped so it cannot come back after the visible copy is deleted.
     expect(JSON.parse(storage.getItem(UNREADABLE_SESSIONS_KEY) ?? "[]")).toEqual([stillUnreadable]);
   });
@@ -231,6 +232,116 @@ describe("local storage helpers", () => {
         },
       ]),
     ).toHaveLength(1);
+  });
+});
+
+describe("saved sessions, one value each (vox#157)", () => {
+  const session = (id: string) =>
+    ({ ...migrateSessionRecord({ ...legacySession, id }), id }) as SavedSession;
+
+  function counting(storage: Storage) {
+    const written: string[] = [];
+    let chars = 0;
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      setItem(key, value);
+      written.push(key);
+      chars += value.length;
+    };
+    return {
+      storage,
+      take() {
+        const result = { written: [...written], chars };
+        written.length = 0;
+        chars = 0;
+        return result;
+      },
+    };
+  }
+
+  it("writes the saved session and the id list only, however many sessions came before", () => {
+    const { storage, take } = counting(memoryStorage());
+    let sessions = loadSessionsFromStorage(storage);
+    const saves = [];
+    for (let index = 0; index < 30; index += 1) {
+      // As the app saves: the stored list reloaded, the new session prepended.
+      sessions = [
+        session(`s-${String(index).padStart(2, "0")}`),
+        ...loadSessionsFromStorage(storage),
+      ];
+      saveSessionsToStorage(sessions, storage);
+      saves.push(take());
+    }
+    // Before vox#157 each save rewrote every session: 30 saves wrote 465 session records.
+    for (const [index, save] of saves.entries()) {
+      expect(save.written).toEqual([sessionKey(sessions[29 - index].id), STORE_KEY]);
+    }
+    const sessionChars = JSON.stringify(sessions[0]).length;
+    const idChars = saves[1].chars - saves[0].chars;
+    expect(idChars).toBeLessThan(16);
+    expect(saves[29].chars).toBe(saves[0].chars + 29 * idChars);
+    expect(saves[0].chars).toBeLessThan(sessionChars + 16);
+    expect(loadSessionsFromStorage(storage)).toEqual(sessions);
+  });
+
+  it("rewrites only the session that changed, and removes the value of a dropped session", () => {
+    const { storage, take } = counting(memoryStorage());
+    saveSessionsToStorage([session("b"), session("a")], storage);
+    take();
+    const [b, a] = loadSessionsFromStorage(storage);
+    const changed = { ...a, startedAt: "2026-09-02T08:00:00.000Z" };
+    saveSessionsToStorage([b, changed], storage);
+    expect(take().written).toEqual([sessionKey("a")]);
+
+    saveSessionsToStorage([changed], storage);
+    expect(take().written).toEqual([STORE_KEY]);
+    expect(storage.getItem(sessionKey("b"))).toBeNull();
+    expect(loadSessionsFromStorage(storage)).toEqual([changed]);
+  });
+
+  it("moves sessions stored inline by earlier builds into their own values", () => {
+    const storage = memoryStorage({ [STORE_KEY]: JSON.stringify([legacySession]) });
+
+    const [loaded] = loadSessionsFromStorage(storage);
+    expect(JSON.parse(storage.getItem(STORE_KEY) ?? "null")).toEqual(["legacy-1"]);
+    expect(JSON.parse(storage.getItem(sessionKey("legacy-1")) ?? "null")).toEqual(loaded);
+    expect(loadSessionsFromStorage(storage)).toEqual([loaded]);
+  });
+
+  it("puts back what it replaced when a write fails, leaving the stored list as it was", () => {
+    const storage = memoryStorage();
+    saveSessionsToStorage([session("a")], storage);
+    const before = new Map(
+      [STORE_KEY, sessionKey("a")].map((key) => [key, storage.getItem(key)] as const),
+    );
+    const [a] = loadSessionsFromStorage(storage);
+    const setItem = storage.setItem.bind(storage);
+    storage.setItem = (key, value) => {
+      if (key === STORE_KEY) throw new DOMException("full", "QuotaExceededError");
+      setItem(key, value);
+    };
+
+    expect(() =>
+      saveSessionsToStorage(
+        [session("b"), { ...a, startedAt: "2026-09-02T08:00:00.000Z" }],
+        storage,
+      ),
+    ).toThrow("full");
+    for (const [key, value] of before) expect(storage.getItem(key)).toBe(value);
+    expect(storage.getItem(sessionKey("b"))).toBeNull();
+  });
+
+  it("keeps an unreadable session value aside", () => {
+    const storage = memoryStorage({
+      [STORE_KEY]: JSON.stringify(["broken", "gone"]),
+      [sessionKey("broken")]: "{",
+    });
+
+    expect(loadSessionsFromStorage(storage)).toEqual([]);
+    expect(JSON.parse(storage.getItem(UNREADABLE_SESSIONS_KEY) ?? "[]")).toEqual([
+      { unreadableSession: "{" },
+    ]);
+    expect(JSON.parse(storage.getItem(STORE_KEY) ?? "null")).toEqual([]);
   });
 });
 

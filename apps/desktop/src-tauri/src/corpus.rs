@@ -1,4 +1,4 @@
-use crate::protected_store::Document;
+use crate::protected_store::{Document, Entries};
 use std::collections::BTreeMap;
 
 use crate::text_analysis_features::{
@@ -23,7 +23,7 @@ pub enum CorpusError {
     InvalidSessionId,
 }
 
-type Result<T> = std::result::Result<T, CorpusError>;
+pub type Result<T> = std::result::Result<T, CorpusError>;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "CorpusSessionWire")]
@@ -263,131 +263,234 @@ struct CorpusDocument {
     stutter_count: usize,
 }
 
-pub fn load_speech_corpus_impl(file: &dyn Document) -> Result<SpeechCorpusAnalysis> {
-    let store = read_store(file)?;
-    analyze_store(&store)
+/// Where the corpus is stored: one entry per session id (vox#157), so a save writes the saved
+/// session only, and the single document of earlier builds, split into entries on first load.
+pub struct CorpusFiles<'a> {
+    pub sessions: &'a dyn Entries,
+    pub legacy: &'a dyn Document,
 }
 
-/// Per session, only what verifying its analysis needs (the analysis `inputId` and the untouched
-/// observation): a small payload instead of the full store with reports and history.
-pub fn speech_corpus_observations_impl(file: &dyn Document) -> Result<serde_json::Value> {
-    let store = read_store(file)?;
-    let pick = |session: &SpeechCorpusSession, key: &str| {
-        session
-            .provenance
-            .fields
-            .get(key)
-            .cloned()
-            .unwrap_or(serde_json::Value::Null)
-    };
-    Ok(serde_json::json!({
-        "sessions": store
-            .sessions
-            .iter()
-            .map(|session| {
-                serde_json::json!({
-                    "analysis": {
-                        "inputId": session
-                            .provenance
-                            .fields
-                            .get("analysis")
-                            .and_then(|analysis| analysis.get("inputId"))
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null),
-                    },
-                    "observedSegments": pick(session, "observedSegments"),
-                    "pauses": pick(session, "pauses"),
-                })
-            })
-            .collect::<Vec<_>>(),
-    }))
+/// The speech corpus of this app run (PRINCIPLE-008): the stored sessions are read and parsed
+/// once, then kept in step with every change written through here, and the analysis is computed
+/// once per change, when it is next asked for. Save neither reads the corpus nor analyzes it.
+#[derive(Default)]
+pub struct SpeechCorpus {
+    store: Option<SpeechCorpusStore>,
+    analysis: Option<SpeechCorpusAnalysis>,
 }
 
-/// Fills in the capture quality of rows saved before the corpus kept it, from the matching saved
-/// sessions' verdicts. Rows that already have one are left as they are. The analysis applies the
-/// verdicts even when persisting them fails; the next load retries the write.
-pub fn backfill_speech_corpus_capture_quality_impl(
-    file: &dyn Document,
-    qualities: &BTreeMap<String, serde_json::Value>,
-) -> Result<SpeechCorpusAnalysis> {
-    let mut store = read_store(file)?;
-    let mut changed = false;
-    for session in &mut store.sessions {
-        if session.capture_quality.is_none() {
-            if let Some(quality) = qualities.get(&session.id) {
-                session.capture_quality = Some(quality.clone());
-                changed = true;
-            }
+impl SpeechCorpus {
+    /// The stored sessions, newest first, read on first use.
+    fn loaded(&mut self, files: &CorpusFiles) -> Result<&mut SpeechCorpusStore> {
+        if self.store.is_none() {
+            self.store = Some(load_store(files)?);
+            self.analysis = None;
         }
+        Ok(self.store.as_mut().expect("loaded above"))
     }
-    if changed {
-        if let Err(error) = write_store(file, &store) {
-            eprintln!("could not persist backfilled corpus capture quality: {error}");
+
+    fn changed(&mut self) {
+        self.analysis = None;
+    }
+
+    pub fn analysis(&mut self, files: &CorpusFiles) -> Result<SpeechCorpusAnalysis> {
+        if let Some(analysis) = &self.analysis {
+            return Ok(analysis.clone());
         }
+        let analysis = analyze_store(self.loaded(files)?)?;
+        self.analysis = Some(analysis.clone());
+        Ok(analysis)
     }
-    analyze_store(&store)
-}
 
-pub fn export_speech_corpus_impl(file: &dyn Document) -> Result<serde_json::Value> {
-    let store = read_store(file)?;
-    Ok(serde_json::to_value(store)?)
-}
-
-pub fn save_speech_corpus_session_impl(
-    file: &dyn Document,
-    request: CorpusSessionInput,
-) -> Result<SpeechCorpusAnalysis> {
-    let mut store = read_store(file)?;
-    let session = normalize_session(request);
-    store.sessions.retain(|existing| existing.id != session.id);
-    store.sessions.push(session);
-    store
-        .sessions
-        .sort_by(|left, right| right.started_at.cmp(&left.started_at));
-    write_store(file, &store)?;
-    analyze_store(&store)
-}
-
-/// Replaces the whole corpus with exactly `sessions` (backup restore, owner decision #86 (a)).
-/// Every input is validated before anything is written, and the write is atomic, so a failure
-/// leaves the existing store unchanged.
-pub fn replace_speech_corpus_sessions_impl(
-    file: &dyn Document,
-    sessions: Vec<CorpusSessionInput>,
-) -> Result<SpeechCorpusAnalysis> {
-    let mut ids = std::collections::BTreeSet::new();
-    for session in &sessions {
-        let id = session.id.trim();
-        if id.is_empty() || !ids.insert(id.to_string()) {
+    /// Writes this session's entry only. Returns the bytes written.
+    pub fn save(&mut self, files: &CorpusFiles, request: CorpusSessionInput) -> Result<usize> {
+        let session = normalize_session(request);
+        if session.id.is_empty() {
             return Err(CorpusError::InvalidSessionId);
         }
+        let entry = serde_json::to_vec(&session)?;
+        files.sessions.put(&session.id, &entry)?;
+        if let Some(store) = self.store.as_mut() {
+            store.sessions.retain(|existing| existing.id != session.id);
+            store.sessions.push(session);
+            sort_newest_first(store);
+            self.changed();
+        }
+        Ok(entry.len())
     }
-    // The whole store is replaced, so the superseded file is not read: a corrupt corpus can still
-    // be repaired by restoring a valid backup.
+
+    pub fn delete(
+        &mut self,
+        files: &CorpusFiles,
+        session_id: &str,
+    ) -> Result<SpeechCorpusAnalysis> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Err(CorpusError::InvalidSessionId);
+        }
+        // Loaded first, so a session still in the legacy document is split out before it is
+        // removed, not brought back by a later split.
+        let store = self.loaded(files)?;
+        if store
+            .sessions
+            .iter()
+            .any(|session| session.id == session_id)
+        {
+            files.sessions.remove(session_id)?;
+            delete_session(store, session_id);
+            self.changed();
+        }
+        self.analysis(files)
+    }
+
+    /// Replaces the whole corpus with exactly `sessions` (backup restore, owner decision #86 (a)).
+    /// Every input is validated before anything is written. The superseded corpus is not parsed,
+    /// so a corrupt one can still be repaired by restoring a valid backup; a failed write puts
+    /// back the entries that were there before.
+    pub fn replace(
+        &mut self,
+        files: &CorpusFiles,
+        sessions: Vec<CorpusSessionInput>,
+    ) -> Result<SpeechCorpusAnalysis> {
+        let mut ids = std::collections::BTreeSet::new();
+        for session in &sessions {
+            let id = session.id.trim();
+            if id.is_empty() || !ids.insert(id.to_string()) {
+                return Err(CorpusError::InvalidSessionId);
+            }
+        }
+        let mut store = SpeechCorpusStore {
+            sessions: sessions.into_iter().map(normalize_session).collect(),
+        };
+        sort_newest_first(&mut store);
+        let previous = files.sessions.entries().ok();
+        let written = (|| -> Result<()> {
+            for session in &store.sessions {
+                files
+                    .sessions
+                    .put(&session.id, &serde_json::to_vec(session)?)?;
+            }
+            files.sessions.retain(&ids)?;
+            files.legacy.remove()?;
+            Ok(())
+        })();
+        if let Err(error) = written {
+            if let Some(previous) = previous {
+                for (id, entry) in &previous {
+                    let _ = files.sessions.put(id, entry);
+                }
+                let _ = files.sessions.retain(&previous.keys().cloned().collect());
+            }
+            self.store = None;
+            self.analysis = None;
+            return Err(error);
+        }
+        self.store = Some(store);
+        self.changed();
+        self.analysis(files)
+    }
+
+    /// Fills in the capture quality of rows saved before the corpus kept it, from the matching
+    /// saved sessions' verdicts. Rows that already have one are left as they are. The analysis
+    /// applies the verdicts even when persisting them fails; the next load retries the write.
+    pub fn backfill_capture_quality(
+        &mut self,
+        files: &CorpusFiles,
+        qualities: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<SpeechCorpusAnalysis> {
+        let store = self.loaded(files)?;
+        let mut changed = false;
+        for session in &mut store.sessions {
+            if session.capture_quality.is_none() {
+                if let Some(quality) = qualities.get(&session.id) {
+                    session.capture_quality = Some(quality.clone());
+                    changed = true;
+                    let written = serde_json::to_vec(&*session)
+                        .map_err(CorpusError::from)
+                        .and_then(|entry| Ok(files.sessions.put(&session.id, &entry)?));
+                    if let Err(error) = written {
+                        eprintln!("could not persist backfilled corpus capture quality: {error}");
+                    }
+                }
+            }
+        }
+        if changed {
+            self.changed();
+        }
+        self.analysis(files)
+    }
+
+    pub fn export(&mut self, files: &CorpusFiles) -> Result<serde_json::Value> {
+        Ok(serde_json::to_value(&*self.loaded(files)?)?)
+    }
+
+    /// Per session, only what verifying its analysis needs (the analysis `inputId` and the
+    /// untouched observation): a small payload instead of the full store with reports and history.
+    pub fn observations(&mut self, files: &CorpusFiles) -> Result<serde_json::Value> {
+        let store = self.loaded(files)?;
+        let pick = |session: &SpeechCorpusSession, key: &str| {
+            session
+                .provenance
+                .fields
+                .get(key)
+                .cloned()
+                .unwrap_or(serde_json::Value::Null)
+        };
+        Ok(serde_json::json!({
+            "sessions": store
+                .sessions
+                .iter()
+                .map(|session| {
+                    serde_json::json!({
+                        "analysis": {
+                            "inputId": session
+                                .provenance
+                                .fields
+                                .get("analysis")
+                                .and_then(|analysis| analysis.get("inputId"))
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
+                        },
+                        "observedSegments": pick(session, "observedSegments"),
+                        "pauses": pick(session, "pauses"),
+                    })
+                })
+                .collect::<Vec<_>>(),
+        }))
+    }
+}
+
+/// Reads every entry; sessions still only in the legacy document are written as entries first,
+/// then the document is removed. An entry is newer than the document's row of the same id.
+fn load_store(files: &CorpusFiles) -> Result<SpeechCorpusStore> {
+    let mut sessions = BTreeMap::new();
+    for (id, entry) in files.sessions.entries()? {
+        sessions.insert(id, serde_json::from_slice::<SpeechCorpusSession>(&entry)?);
+    }
+    if let Some(content) = files.legacy.load()? {
+        let legacy: SpeechCorpusStore = serde_json::from_slice(&content)?;
+        for session in legacy.sessions {
+            if session.id.is_empty() || sessions.contains_key(&session.id) {
+                continue;
+            }
+            files
+                .sessions
+                .put(&session.id, &serde_json::to_vec(&session)?)?;
+            sessions.insert(session.id.clone(), session);
+        }
+        files.legacy.remove()?;
+    }
     let mut store = SpeechCorpusStore {
-        sessions: sessions.into_iter().map(normalize_session).collect(),
+        sessions: sessions.into_values().collect(),
     };
+    sort_newest_first(&mut store);
+    Ok(store)
+}
+
+fn sort_newest_first(store: &mut SpeechCorpusStore) {
     store
         .sessions
         .sort_by(|left, right| right.started_at.cmp(&left.started_at));
-    write_store(file, &store)?;
-    analyze_store(&store)
-}
-
-pub fn delete_speech_corpus_session_impl(
-    file: &dyn Document,
-    session_id: &str,
-) -> Result<SpeechCorpusAnalysis> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        return Err(CorpusError::InvalidSessionId);
-    }
-
-    let mut store = read_store(file)?;
-    if delete_session(&mut store, session_id) {
-        write_store(file, &store)?;
-    }
-    analyze_store(&store)
 }
 
 fn delete_session(store: &mut SpeechCorpusStore, session_id: &str) -> bool {
@@ -434,20 +537,6 @@ fn normalize_session(request: CorpusSessionInput) -> SpeechCorpusSession {
         capture_quality: request.report.capture_quality,
         provenance: request.provenance,
     }
-}
-
-fn read_store(file: &dyn Document) -> Result<SpeechCorpusStore> {
-    match file.load()? {
-        Some(content) => Ok(serde_json::from_slice(&content)?),
-        None => Ok(SpeechCorpusStore::default()),
-    }
-}
-
-/// Saves are atomic (see [`Document::save`]), so a failed or interrupted write never leaves a
-/// partially written corpus behind.
-fn write_store(file: &dyn Document, store: &SpeechCorpusStore) -> Result<()> {
-    file.save(serde_json::to_string_pretty(store)?.as_bytes())?;
-    Ok(())
 }
 
 fn analyze_store(store: &SpeechCorpusStore) -> Result<SpeechCorpusAnalysis> {
@@ -768,6 +857,7 @@ fn clean_optional(value: Option<String>) -> Option<String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn analyzes_corpus_by_speaker() {
@@ -880,7 +970,7 @@ mod tests {
             "issues": ["clipping"],
             "explanation": "Result unknown: the input is clipping (too loud)."
         });
-        save_speech_corpus_session_impl(
+        save(
             &path,
             serde_json::from_value(session(
                 "usable",
@@ -890,13 +980,13 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let analysis = save_speech_corpus_session_impl(
+        let analysis = save(
             &path,
             serde_json::from_value(session("clipped", 30, unknown.clone())).unwrap(),
         )
         .unwrap();
-        let exported = export_speech_corpus_impl(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        let exported = export(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(analysis.stats.sessions, 2);
         assert_eq!(analysis.stats.withheld_sessions, 1);
@@ -925,7 +1015,7 @@ mod tests {
     fn backfills_capture_quality_of_rows_saved_without_it() {
         let path = temp_corpus_path("backfill");
         fs::write(
-            &path,
+            legacy(&path),
             r#"{"sessions":[
                 {"id":"legacy","startedAt":"2026-10-08T10:00:00.000Z","segments":[{"text":"I want to speak","startSeconds":0.0,"endSeconds":2.0,"isFinal":true}],"totalDurationSeconds":60.0,"wordCount":4,"stutterCount":30,"stuttersPerMinute":30.0},
                 {"id":"kept","startedAt":"2026-10-07T10:00:00.000Z","segments":[],"totalDurationSeconds":60.0,"wordCount":0,"stutterCount":2,"stuttersPerMinute":2.0,"captureQuality":{"state":"usable","issues":[]}}
@@ -942,9 +1032,9 @@ mod tests {
             ("kept".to_owned(), unknown.clone()),
             ("absent".to_owned(), unknown.clone()),
         ]);
-        let analysis = backfill_speech_corpus_capture_quality_impl(&path, &qualities).unwrap();
-        let store = read_store(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        let analysis = backfill(&path, &qualities).unwrap();
+        let store = stored(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(analysis.stats.withheld_sessions, 1);
         assert_eq!(analysis.stats.stutter_count, 2);
@@ -956,27 +1046,179 @@ mod tests {
         );
     }
 
-    fn temp_corpus_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "vox-corpus-{name}-{}-{}.json",
+    /// A data directory holding a plain-mode corpus: entries under `speech-corpus/`, the legacy
+    /// document as `speech-corpus.json`.
+    fn temp_corpus_path(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "vox-corpus-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ))
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn entries_dir(path: &Path) -> PathBuf {
+        path.join("speech-corpus")
+    }
+
+    fn legacy(path: &Path) -> PathBuf {
+        path.join("speech-corpus.json")
+    }
+
+    /// Runs `change` the way one app start does: a fresh corpus over the stored files.
+    fn with<T>(path: &Path, change: impl FnOnce(&mut SpeechCorpus, &CorpusFiles) -> T) -> T {
+        with_corpus(path, &mut SpeechCorpus::default(), change)
+    }
+
+    fn with_corpus<T>(
+        path: &Path,
+        corpus: &mut SpeechCorpus,
+        change: impl FnOnce(&mut SpeechCorpus, &CorpusFiles) -> T,
+    ) -> T {
+        let (entries, legacy) = (entries_dir(path), legacy(path));
+        let files = CorpusFiles {
+            sessions: &entries,
+            legacy: &legacy,
+        };
+        change(corpus, &files)
+    }
+
+    fn save(path: &Path, input: CorpusSessionInput) -> Result<SpeechCorpusAnalysis> {
+        with(path, |corpus, files| {
+            corpus.save(files, input)?;
+            corpus.analysis(files)
+        })
+    }
+
+    fn export(path: &Path) -> Result<serde_json::Value> {
+        with(path, |corpus, files| corpus.export(files))
+    }
+
+    fn observations(path: &Path) -> Result<serde_json::Value> {
+        with(path, |corpus, files| corpus.observations(files))
+    }
+
+    fn backfill(
+        path: &Path,
+        qualities: &BTreeMap<String, serde_json::Value>,
+    ) -> Result<SpeechCorpusAnalysis> {
+        with(path, |corpus, files| {
+            corpus.backfill_capture_quality(files, qualities)
+        })
+    }
+
+    fn replace(path: &Path, sessions: Vec<CorpusSessionInput>) -> Result<SpeechCorpusAnalysis> {
+        with(path, |corpus, files| corpus.replace(files, sessions))
+    }
+
+    fn stored(path: &Path) -> Result<SpeechCorpusStore> {
+        with(path, |_, files| load_store(files))
+    }
+
+    fn entries(path: &Path) -> BTreeMap<String, Vec<u8>> {
+        Entries::entries(&entries_dir(path)).unwrap()
+    }
+
+    /// vox#157: a save writes that session's entry only, the same bytes however many sessions
+    /// were saved before; the old corpus document was rewritten whole on every save.
+    #[test]
+    fn a_save_writes_only_its_session() {
+        let path = temp_corpus_path("save-size");
+        // One app run across the saves, as in the app.
+        let mut corpus = SpeechCorpus::default();
+        let written = (0..5)
+            .map(|index| {
+                with_corpus(&path, &mut corpus, |corpus, files| {
+                    let id = format!("session-{index}");
+                    let input = replace_input(&id, "2026-10-09T10:00:00.000Z", "same text");
+                    corpus.save(files, input).unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        let stored = entries(&path);
+        let analysis = with_corpus(&path, &mut corpus, |corpus, files| corpus.analysis(files));
+        let _ = fs::remove_dir_all(&path);
+
+        assert!(
+            written.iter().all(|bytes| *bytes == written[0]),
+            "{written:?}"
+        );
+        assert_eq!(stored.len(), 5);
+        assert_eq!(analysis.unwrap().stats.sessions, 5);
+    }
+
+    #[test]
+    fn the_legacy_document_is_split_into_entries_once() {
+        let path = temp_corpus_path("split");
+        fs::write(
+            legacy(&path),
+            r#"{"sessions":[
+                {"id":"old","startedAt":"2026-05-19T12:00:00.000Z","segments":[],"totalDurationSeconds":3.0,"wordCount":0,"stutterCount":1,"stuttersPerMinute":0.0},
+                {"id":"resaved","startedAt":"2026-05-18T12:00:00.000Z","segments":[],"totalDurationSeconds":3.0,"wordCount":0,"stutterCount":1,"stuttersPerMinute":0.0}
+            ]}"#,
+        )
+        .unwrap();
+        // Saved by this build before anything loaded the corpus: newer than the document's row.
+        with(&path, |corpus, files| {
+            let input = replace_input("resaved", "2026-10-09T10:00:00.000Z", "new text");
+            corpus.save(files, input)
+        })
+        .unwrap();
+
+        let first = stored(&path).unwrap();
+        let legacy_left = legacy(&path).exists();
+        let second = stored(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
+
+        assert!(!legacy_left);
+        let ids = |store: &SpeechCorpusStore| {
+            store
+                .sessions
+                .iter()
+                .map(|session| session.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&first), vec!["resaved", "old"]);
+        assert_eq!(first.sessions[0].segments[0].text, "new text");
+        assert_eq!(ids(&first), ids(&second));
+    }
+
+    #[test]
+    fn the_analysis_follows_saves_and_deletes_of_the_same_run() {
+        let path = temp_corpus_path("cache");
+        let counts = with(&path, |corpus, files| {
+            let mut counts = vec![corpus.analysis(files).unwrap().stats.sessions];
+            let one = replace_input("a", "2026-10-09T10:00:00.000Z", "one");
+            corpus.save(files, one).unwrap();
+            counts.push(corpus.analysis(files).unwrap().stats.sessions);
+            let two = replace_input("b", "2026-10-10T10:00:00.000Z", "two");
+            corpus.save(files, two).unwrap();
+            counts.push(corpus.analysis(files).unwrap().stats.sessions);
+            counts.push(corpus.delete(files, "a").unwrap().stats.sessions);
+            counts
+        });
+        let fresh = stored(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
+
+        assert_eq!(counts, vec![0, 1, 2, 1]);
+        assert_eq!(fresh.sessions.len(), 1);
+        assert_eq!(fresh.sessions[0].id, "b");
     }
 
     #[test]
     fn loads_corpus_files_written_before_provenance_was_stored() {
         let path = temp_corpus_path("legacy");
         fs::write(
-            &path,
+            legacy(&path),
             r#"{"sessions":[{"id":"old","startedAt":"2026-05-19T12:00:00.000Z","segments":[],"totalDurationSeconds":3.0,"wordCount":0,"stutterCount":0,"stuttersPerMinute":0.0}]}"#,
         )
         .unwrap();
-        let store = read_store(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        let store = stored(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(store.sessions.len(), 1);
         assert_eq!(store.sessions[0].provenance, SessionProvenance::default());
@@ -1020,10 +1262,10 @@ mod tests {
             .unwrap()
             .extend(provenance.as_object().unwrap().clone());
 
-        save_speech_corpus_session_impl(&path, serde_json::from_value(input).unwrap()).unwrap();
-        let exported = export_speech_corpus_impl(&path).unwrap();
-        let observations = speech_corpus_observations_impl(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        save(&path, serde_json::from_value(input).unwrap()).unwrap();
+        let exported = export(&path).unwrap();
+        let observations = observations(&path).unwrap();
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(
             observations["sessions"][0],
@@ -1073,8 +1315,8 @@ mod tests {
         .unwrap()
     }
 
-    fn exported_sessions_by_id(path: &std::path::PathBuf) -> Vec<serde_json::Value> {
-        let mut sessions = export_speech_corpus_impl(path).unwrap()["sessions"]
+    fn exported_sessions_by_id(path: &Path) -> Vec<serde_json::Value> {
+        let mut sessions = export(path).unwrap()["sessions"]
             .as_array()
             .unwrap()
             .clone();
@@ -1087,16 +1329,12 @@ mod tests {
         sessions
     }
 
-    fn seed_existing_corpus(path: &std::path::PathBuf) {
+    fn seed_existing_corpus(path: &Path) {
         for (id, started_at) in [
             ("current-a", "2026-10-09T10:00:00.000Z"),
             ("current-b", "2026-10-10T10:00:00.000Z"),
         ] {
-            save_speech_corpus_session_impl(
-                path,
-                replace_input(id, started_at, "current speech here"),
-            )
-            .unwrap();
+            save(path, replace_input(id, started_at, "current speech here")).unwrap();
         }
     }
 
@@ -1112,18 +1350,18 @@ mod tests {
         let path = temp_corpus_path("replace");
         seed_existing_corpus(&path);
 
-        let analysis = replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
+        let analysis = replace(&path, restored_inputs()).unwrap();
         let replaced = exported_sessions_by_id(&path);
 
         // The same sessions saved one by one into an empty corpus: replace stores them exactly as
         // a save would, and nothing of the previous corpus survives.
         let fresh = temp_corpus_path("replace-fresh");
         for input in restored_inputs() {
-            save_speech_corpus_session_impl(&fresh, input).unwrap();
+            save(&fresh, input).unwrap();
         }
         let expected = exported_sessions_by_id(&fresh);
-        let _ = fs::remove_file(&path);
-        let _ = fs::remove_file(&fresh);
+        let _ = fs::remove_dir_all(&path);
+        let _ = fs::remove_dir_all(&fresh);
 
         assert_eq!(analysis.stats.sessions, 2);
         assert_eq!(
@@ -1141,9 +1379,9 @@ mod tests {
         let path = temp_corpus_path("replace-empty");
         seed_existing_corpus(&path);
 
-        let analysis = replace_speech_corpus_sessions_impl(&path, Vec::new()).unwrap();
+        let analysis = replace(&path, Vec::new()).unwrap();
         let replaced = exported_sessions_by_id(&path);
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(analysis.stats.sessions, 0);
         assert!(replaced.is_empty());
@@ -1153,35 +1391,14 @@ mod tests {
     #[test]
     fn replacing_repairs_a_corrupt_corpus_file() {
         let path = temp_corpus_path("replace-corrupt");
-        fs::write(&path, b"{\"sessions\": [").unwrap();
+        fs::write(legacy(&path), b"{\"sessions\": [").unwrap();
 
-        let analysis = replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
+        let analysis = replace(&path, restored_inputs()).unwrap();
         let replaced = exported_sessions_by_id(&path);
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(analysis.stats.sessions, 2);
         assert_eq!(replaced.len(), 2);
-    }
-
-    // Implementation regression test (not acceptance): concurrent writers use distinct temp files.
-    #[test]
-    fn atomic_writes_leave_no_temporary_files_behind() {
-        let path = temp_corpus_path("replace-no-temp");
-        replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
-        replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
-        let directory = path.parent().unwrap();
-        let prefix = path.file_name().unwrap().to_string_lossy().to_string();
-        let leftovers = fs::read_dir(directory)
-            .unwrap()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                let name = entry.file_name().to_string_lossy().to_string();
-                name.starts_with(&prefix) && name.ends_with(".tmp")
-            })
-            .count();
-        let _ = fs::remove_file(&path);
-
-        assert_eq!(leftovers, 0);
     }
 
     #[test]
@@ -1189,11 +1406,11 @@ mod tests {
         let path = temp_corpus_path("replace-twice");
         seed_existing_corpus(&path);
 
-        let first = replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
-        let after_first = fs::read(&path).unwrap();
-        let second = replace_speech_corpus_sessions_impl(&path, restored_inputs()).unwrap();
-        let after_second = fs::read(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        let first = replace(&path, restored_inputs()).unwrap();
+        let after_first = entries(&path);
+        let second = replace(&path, restored_inputs()).unwrap();
+        let after_second = entries(&path);
+        let _ = fs::remove_dir_all(&path);
 
         assert_eq!(after_first, after_second);
         assert_eq!(
@@ -1206,17 +1423,33 @@ mod tests {
     fn an_invalid_restored_session_leaves_the_existing_corpus_unchanged() {
         let path = temp_corpus_path("replace-invalid");
         seed_existing_corpus(&path);
-        let before = fs::read(&path).unwrap();
+        let before = entries(&path);
 
         // The second session has no usable id; the whole replace is refused, not applied in part.
         let mut inputs = restored_inputs();
         inputs[1].id = "   ".to_owned();
-        let result = replace_speech_corpus_sessions_impl(&path, inputs);
-        let after = fs::read(&path).unwrap();
-        let _ = fs::remove_file(&path);
+        let result = replace(&path, inputs);
+        let after = entries(&path);
+        let _ = fs::remove_dir_all(&path);
 
         assert!(result.is_err());
         assert_eq!(before, after);
+    }
+
+    // Implementation regression test (not acceptance): concurrent writers use distinct temp files.
+    #[test]
+    fn atomic_writes_leave_no_temporary_files_behind() {
+        let path = temp_corpus_path("replace-no-temp");
+        replace(&path, restored_inputs()).unwrap();
+        replace(&path, restored_inputs()).unwrap();
+        let leftovers = fs::read_dir(entries_dir(&path))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        let _ = fs::remove_dir_all(&path);
+
+        assert_eq!(leftovers, 0);
     }
 
     #[cfg(unix)]
@@ -1224,23 +1457,21 @@ mod tests {
     fn a_failed_write_leaves_the_existing_corpus_unchanged() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = temp_corpus_path("replace-readonly-dir");
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("speech-corpus.json");
+        let path = temp_corpus_path("replace-readonly-dir");
         seed_existing_corpus(&path);
-        let before = fs::read(&path).unwrap();
+        let before = entries(&path);
 
+        let dir = entries_dir(&path);
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
         // Privileged users ignore directory permissions; the failure cannot be provoked then.
         let probe = dir.join("probe");
         let unwritable = fs::write(&probe, b"").is_err();
         let _ = fs::remove_file(&probe);
 
-        let result =
-            unwritable.then(|| replace_speech_corpus_sessions_impl(&path, restored_inputs()));
-        let after = fs::read(&path).unwrap();
+        let result = unwritable.then(|| replace(&path, restored_inputs()));
+        let after = entries(&path);
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&path);
 
         if let Some(result) = result {
             // An atomic write (temporary file in the same directory, then rename) cannot complete

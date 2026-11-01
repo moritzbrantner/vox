@@ -89,6 +89,23 @@ describe("browser workflow budgets", () => {
     expect(imported.kdfIterations).toBe(100_000);
   });
 
+  // vox#157: Save wrote the whole session list, so its writes grew with every session saved
+  // before (1x, 2x, 3x here). Now it writes the saved session and the id list only.
+  it("writes the same session bytes on Save however many sessions were saved before", async () => {
+    setSessionAudioStore(memoryAudioStore());
+    const report = await runBrowserWorkflows(3, async (index) => synthetic(`s${index}`, 30), {
+      chunkSeconds: 8,
+      backupIterations: 100_000,
+    });
+    const saves = report.recordings.map((item) => item.counters);
+    expect(saves.map((save) => save.savedSessionChars)).toEqual(
+      saves.map(() => saves[0].savedSessionChars),
+    );
+    const idChars = saves[1].savedSessionIndexChars - saves[0].savedSessionIndexChars;
+    expect(saves[2].savedSessionIndexChars).toBe(saves[0].savedSessionIndexChars + 2 * idChars);
+    expect(idChars).toBeLessThan(64);
+  });
+
   it("reports disproportionate work as a violation", async () => {
     setSessionAudioStore(memoryAudioStore());
     const report = await runBrowserWorkflows(1, async () => synthetic("one", 30), {

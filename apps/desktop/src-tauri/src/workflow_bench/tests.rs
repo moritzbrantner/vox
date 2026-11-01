@@ -95,10 +95,13 @@ fn every_workflow_does_work_proportional_to_its_input() {
     assert_eq!(long.saved_sessions_in_list, 2);
     assert_eq!(long.saved_corpus_sessions, 2);
 
-    // Review reads each sealed value once; import rewrites the list and the corpus once.
+    // Review reads each sealed value once (two sessions and the index); import rewrites each
+    // session, the index and the corpus once.
+    let stored_sessions =
+        short.saved_session_bytes + long.saved_session_bytes + long.saved_session_index_bytes;
     let (review, _) = &report.review;
-    assert_eq!(review.web_entries_unsealed, 1);
-    assert_eq!(review.web_bytes_unsealed, long.saved_session_list_bytes);
+    assert_eq!(review.web_entries_unsealed, 3);
+    assert_eq!(review.web_bytes_unsealed, stored_sessions);
     assert_eq!(review.audio_opened, 2);
     assert_eq!(
         review.audio_bytes_unsealed,
@@ -107,7 +110,39 @@ fn every_workflow_does_work_proportional_to_its_input() {
     assert_eq!(review.corpus_sessions_loaded, 2);
     let (import, _) = &report.import;
     assert_eq!(import.sessions, 2);
-    assert_eq!(import.session_list_bytes, long.saved_session_list_bytes);
+    assert_eq!(import.session_list_bytes, stored_sessions);
+}
+
+/// vox#157: Save wrote the whole session list and rewrote the whole corpus document, so a save's
+/// bytes grew with every session saved before (1x, 2x, 3x here). Now a save writes the session
+/// and its corpus entry only; just the id index grows, by one id per session.
+#[test]
+fn a_save_writes_the_same_bytes_however_many_sessions_were_saved_before() {
+    let report = run(
+        ["a", "b", "c"].map(|id| Ok(synthetic(id, 30))),
+        &Options {
+            chunk_seconds: 8.0,
+            store_root: store_root("save-growth"),
+        },
+    )
+    .unwrap();
+    let saves = report
+        .recordings
+        .iter()
+        .map(|recording| &recording.counters)
+        .collect::<Vec<_>>();
+    for save in &saves[1..] {
+        assert_eq!(save.saved_session_bytes, saves[0].saved_session_bytes);
+        assert_eq!(save.saved_corpus_bytes, saves[0].saved_corpus_bytes);
+        assert_eq!(save.saved_audio_bytes, saves[0].saved_audio_bytes);
+    }
+    let id_bytes = saves[1].saved_session_index_bytes - saves[0].saved_session_index_bytes;
+    assert_eq!(
+        saves[2].saved_session_index_bytes,
+        saves[0].saved_session_index_bytes + 2 * id_bytes
+    );
+    assert!(id_bytes < 32, "{id_bytes} index bytes per session");
+    assert_eq!(saves[2].saved_corpus_sessions, 3);
 }
 
 #[test]

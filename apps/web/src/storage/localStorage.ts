@@ -16,7 +16,9 @@ import type {
 import { parseStoredSession } from "./sessionBackup";
 import { appStorage } from "./protectedStorage";
 
+/** The saved sessions' ids, newest first; each session is stored under `sessionKey(id)`. */
 export const STORE_KEY = "stutter-tracker:sessions";
+export const SESSION_KEY_PREFIX = "stutter-tracker:session:";
 /** Stored sessions this build cannot read; kept so a later save does not drop them. */
 export const UNREADABLE_SESSIONS_KEY = "stutter-tracker:sessions:unreadable";
 export const VOICE_KEY = "stutter-tracker:voiceprint";
@@ -124,10 +126,66 @@ export function saveRemoteConsent(
   }
 }
 
+/** The storage key of one saved session's own value. */
+export function sessionKey(id: string) {
+  return `${SESSION_KEY_PREFIX}${id}`;
+}
+
+type ParsedSession = { raw: string; session: SavedSession };
+
+// Per storage, each session value as last read or written and the session parsed from it
+// (PRINCIPLE-008): an unchanged value is not parsed again on load, and a session object that is
+// what its value holds is not serialized or written again on save.
+const parsedSessions = new WeakMap<Storage, Map<string, ParsedSession>>();
+
+function parsedCache(storage: Storage) {
+  let cache = parsedSessions.get(storage);
+  if (!cache) {
+    cache = new Map();
+    parsedSessions.set(storage, cache);
+  }
+  return cache;
+}
+
+/** Reads one session value, reusing its parse while the stored value is unchanged. */
+function readStoredSession(
+  storage: Storage,
+  key: string,
+  raw: string,
+): { session: SavedSession } | { unreadable: unknown } {
+  const cache = parsedCache(storage);
+  const cached = cache.get(key);
+  if (cached?.raw === raw) {
+    return { session: cached.session };
+  }
+  cache.delete(key);
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { unreadable: { unreadableSession: raw } };
+  }
+  let session: SavedSession | null;
+  try {
+    session = parseStoredSession(value);
+  } catch {
+    session = null;
+  }
+  if (!session) {
+    return { unreadable: value };
+  }
+  cache.set(key, { raw, session });
+  return { session };
+}
+
 /**
  * Loads saved sessions, migrating legacy records to the canonical schema. Entries this build
  * cannot read are kept under UNREADABLE_SESSIONS_KEY and retried on every load, so a later build
  * that can read them restores them.
+ *
+ * STORE_KEY holds the saved sessions' ids, newest first; each session is its own value under
+ * `sessionKey(id)`, so a save writes that session and the id list only (vox#157). Session records
+ * still inline in the list (earlier builds) are moved into their own values on load.
  */
 export function loadSessionsFromStorage(storage: Storage = appStorage()): SavedSession[] {
   const quarantined = readJsonArray(storage, UNREADABLE_SESSIONS_KEY);
@@ -150,35 +208,112 @@ export function loadSessionsFromStorage(storage: Storage = appStorage()): SavedS
     ...stored.map((entry) => [entry, false] as const),
     ...(quarantined ?? []).map((entry) => [entry, true] as const),
   ]) {
-    let session: SavedSession | null;
-    try {
-      session = parseStoredSession(candidate);
-    } catch {
-      session = null;
+    let session: SavedSession | null = null;
+    if (typeof candidate === "string" && !fromQuarantine) {
+      const raw = readRaw(storage, sessionKey(candidate));
+      if (raw === null) {
+        // Listed but gone: the list is rewritten without it.
+        recovered = true;
+        continue;
+      }
+      const read = readStoredSession(storage, sessionKey(candidate), raw);
+      if ("unreadable" in read) {
+        unreadable.push(read.unreadable);
+        recovered = true;
+        continue;
+      }
+      session = read.session;
+      recovered ||= session.id !== candidate;
+    } else {
+      try {
+        session = parseStoredSession(candidate);
+      } catch {
+        session = null;
+      }
+      // An inline record is moved into its own value.
+      recovered ||= Boolean(session);
     }
     if (!session) {
       unreadable.push(candidate);
     } else if (!ids.has(session.id)) {
       ids.add(session.id);
       sessions.push(session);
-      recovered ||= fromQuarantine;
     } else {
       // A readable duplicate of a visible session is dropped; kept, it would reappear after that
       // session is deleted.
       recovered = true;
     }
   }
-  if (unreadable.length || recovered) {
-    try {
-      if (recovered) {
-        storage.setItem(STORE_KEY, JSON.stringify(sessions));
-      }
-      storage.setItem(UNREADABLE_SESSIONS_KEY, JSON.stringify(dedupe(unreadable)));
-    } catch {
-      // Storage full or unavailable: entries stay where they are until the next load.
+  try {
+    if (recovered) {
+      writeSessions(sessions, storage);
     }
+    // Written only when it changes; an unreadable quarantine is left as it is unless there is
+    // something new to keep.
+    const quarantine = JSON.stringify(dedupe(unreadable));
+    if (
+      (quarantined !== null || unreadable.length > 0) &&
+      quarantine !== (readRaw(storage, UNREADABLE_SESSIONS_KEY) ?? "[]")
+    ) {
+      storage.setItem(UNREADABLE_SESSIONS_KEY, quarantine);
+    }
+  } catch {
+    // Storage full or unavailable: entries stay where they are until the next load.
   }
   return sessions;
+}
+
+/**
+ * Stores exactly `next`, newest first: the value of each session that changed, the id list, and
+ * the removal of sessions no longer listed. A session object read or written through here is
+ * known to match its stored value and is not written again, so a save writes the saved session
+ * and the id list only. A failed write puts back the values it replaced and throws.
+ */
+function writeSessions(next: SavedSession[], storage: Storage) {
+  const cache = parsedCache(storage);
+  const previousIds = (readJsonArray(storage, STORE_KEY) ?? []).filter(
+    (entry): entry is string => typeof entry === "string",
+  );
+  const written: Array<[key: string, before: string | null]> = [];
+  try {
+    for (const session of next) {
+      const key = sessionKey(session.id);
+      if (cache.get(key)?.session === session) continue;
+      const raw = JSON.stringify(session);
+      const before = storage.getItem(key);
+      if (before !== raw) {
+        storage.setItem(key, raw);
+        written.push([key, before]);
+      }
+      cache.set(key, { raw, session });
+    }
+    const index = JSON.stringify(next.map((session) => session.id));
+    if (storage.getItem(STORE_KEY) !== index) {
+      storage.setItem(STORE_KEY, index);
+    }
+  } catch (error) {
+    for (const [key, before] of written.reverse()) {
+      cache.delete(key);
+      try {
+        if (before === null) storage.removeItem(key);
+        else storage.setItem(key, before);
+      } catch {
+        // Unavailable; the list still names only what it named before.
+      }
+    }
+    throw error;
+  }
+  const kept = new Set(next.map((session) => session.id));
+  for (const id of previousIds) {
+    if (!kept.has(id)) {
+      cache.delete(sessionKey(id));
+      try {
+        storage.removeItem(sessionKey(id));
+      } catch {
+        // Left behind unlisted; it is never read again.
+      }
+    }
+  }
 }
 
 function readRaw(storage: Storage, key: string) {
@@ -208,12 +343,13 @@ function dedupe(entries: unknown[]) {
 
 /** A restore replaces everything, including quarantined entries it was meant to remove. */
 export function replaceStoredSessions(sessions: SavedSession[], storage: Storage = appStorage()) {
-  storage.setItem(STORE_KEY, JSON.stringify(sessions));
+  writeSessions(sessions, storage);
   storage.removeItem(UNREADABLE_SESSIONS_KEY);
 }
 
+/** Stores `sessions` as the saved list; only sessions that changed are written. */
 export function saveSessionsToStorage(sessions: SavedSession[], storage: Storage = appStorage()) {
-  storage.setItem(STORE_KEY, JSON.stringify(sessions));
+  writeSessions(sessions, storage);
 }
 
 export function loadSpeakerProfilesFromStorage(storage: Storage = appStorage()): SpeakerProfile[] {

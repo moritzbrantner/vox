@@ -15,7 +15,7 @@ import {
   removeCaptureCheckpoint,
   writeCaptureCheckpoint,
 } from "../../storage/captureCheckpoint";
-import { loadSessionsFromStorage } from "../../storage/localStorage";
+import { loadSessionsFromStorage, SESSION_KEY_PREFIX, STORE_KEY } from "../../storage/localStorage";
 import { type SavedSession } from "../../types";
 import { emptyReport } from "../analysis";
 import {
@@ -23,7 +23,6 @@ import {
   detectInterruptedCaptures,
   mergeInterruptedCaptures,
 } from "../captureRecovery";
-import { STORE_KEY } from "../config";
 import { analyzeLocalCorpus, saveSpeechCorpusSession } from "../speechCorpus";
 import type { useWorkspace } from "./useWorkspace";
 import type { useSessionLibrary } from "./useSessionLibrary";
@@ -203,7 +202,7 @@ export function useCaptureRecovery({
       const key = event.key;
       // Another window saved or deleted sessions: later saves here build on its list instead of
       // overwriting it with this window's older copy.
-      if (key === STORE_KEY) {
+      if (key === STORE_KEY || key?.startsWith(SESSION_KEY_PREFIX)) {
         try {
           const stored = loadSessionsFromStorage();
           sessionsRef.current = stored;
@@ -531,7 +530,7 @@ export function useCaptureRecovery({
         showSavedSession(session);
       }
       try {
-        setCorpusAnalysis(await saveSpeechCorpusSession(session));
+        await saveSpeechCorpusSession(session, setCorpusAnalysis);
       } catch {
         setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
       }

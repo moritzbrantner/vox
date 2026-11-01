@@ -246,7 +246,7 @@ export function useSessionSaving({
         () => undefined,
       );
       try {
-        setCorpusAnalysis(await saveSpeechCorpusSession(session));
+        await saveSpeechCorpusSession(session, setCorpusAnalysis);
         return "corpus" as const;
       } catch {
         setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
@@ -340,7 +340,7 @@ export function useSessionSaving({
         return "failed" as const;
       }
       try {
-        setCorpusAnalysis(await saveSpeechCorpusSession(updated));
+        await saveSpeechCorpusSession(updated, setCorpusAnalysis);
         return "corpus" as const;
       } catch {
         setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));

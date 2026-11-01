@@ -93,7 +93,7 @@ export function useSessionUpdates({
         return "saved" as const;
       }
       try {
-        setCorpusAnalysis(await saveSpeechCorpusSession(updated));
+        await saveSpeechCorpusSession(updated, setCorpusAnalysis);
         return "saved" as const;
       } catch {
         setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
@@ -230,7 +230,7 @@ export function useSessionUpdates({
       }
       if (existing && !existing.reviewCopy) {
         try {
-          setCorpusAnalysis(await saveSpeechCorpusSession(result.record));
+          await saveSpeechCorpusSession(result.record, setCorpusAnalysis);
         } catch {
           setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));
         }

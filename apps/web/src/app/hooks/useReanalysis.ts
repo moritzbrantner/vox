@@ -155,7 +155,7 @@ export function useReanalysis({
         setReportRun(updated.analysis);
       }
       try {
-        setCorpusAnalysis(await saveSpeechCorpusSession(updated));
+        await saveSpeechCorpusSession(updated, setCorpusAnalysis);
         return "saved" as const;
       } catch {
         setCorpusAnalysis(analyzeLocalCorpus(sessionsRef.current));

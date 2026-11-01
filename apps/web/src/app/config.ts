@@ -4,7 +4,6 @@ import { isTauri } from "@tauri-apps/api/core";
 import { loadRemoteConsent } from "../storage/localStorage";
 import { type TranscriptionEngine, type TranscriptionEngineId } from "../types";
 
-export const STORE_KEY = "stutter-tracker:sessions";
 export const VOICE_KEY = "stutter-tracker:voiceprint";
 export const SPEAKERS_KEY = "stutter-tracker:speakers";
 /** How long speaker removal waits for the startup load before it is enabled anyway. */

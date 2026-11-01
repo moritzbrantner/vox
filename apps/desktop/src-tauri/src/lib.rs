@@ -39,12 +39,7 @@ use analysis_stream::{
     AnalysisStreamState, StreamFinishRequest, StreamFinished, StreamPushRequest,
     StreamStartRequest, StreamUpdate,
 };
-use corpus::{
-    backfill_speech_corpus_capture_quality_impl, delete_speech_corpus_session_impl,
-    export_speech_corpus_impl, load_speech_corpus_impl, replace_speech_corpus_sessions_impl,
-    save_speech_corpus_session_impl, speech_corpus_observations_impl, CorpusSessionInput,
-    SpeechCorpusAnalysis,
-};
+use corpus::{CorpusFiles, CorpusSessionInput, SpeechCorpus, SpeechCorpusAnalysis};
 use prediction::{predict_speaker_intent_impl, SpeakerIntentPrediction, SpeakerIntentRequest};
 use protected_store::{
     open_local_store, Document, KeychainKeys, LocalStore, Namespace, SPEAKER_PROFILES_DOCUMENT,
@@ -191,8 +186,32 @@ fn save_speaker_profiles(
     Ok(speakers)
 }
 
-/// The app's local storage, opened once at startup (see `protected_store`).
-struct AppStorage(LocalStore);
+/// The app's local storage, opened once at startup (see `protected_store`), and the speech
+/// corpus read from it once and kept in step with every change.
+struct AppStorage(LocalStore, std::sync::Mutex<SpeechCorpus>);
+
+impl AppStorage {
+    fn new(store: LocalStore) -> Self {
+        Self(store, std::sync::Mutex::new(SpeechCorpus::default()))
+    }
+
+    fn corpus<T>(
+        &self,
+        change: impl FnOnce(&mut SpeechCorpus, &CorpusFiles) -> corpus::Result<T>,
+    ) -> Result<T, String> {
+        let sessions = self.0.corpus_entries()?;
+        let legacy = self.0.document(SPEECH_CORPUS_DOCUMENT)?;
+        let files = CorpusFiles {
+            sessions: &sessions,
+            legacy: &legacy,
+        };
+        let mut corpus = self
+            .1
+            .lock()
+            .map_err(|_| "the corpus is unavailable".to_string())?;
+        change(&mut corpus, &files).map_err(|err| err.to_string())
+    }
+}
 
 /// What the web view learns about its storage when it starts.
 #[derive(serde::Serialize)]
@@ -342,8 +361,7 @@ fn protected_audio_retain(
 fn load_speech_corpus(
     storage: tauri::State<'_, AppStorage>,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    load_speech_corpus_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
-        .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.analysis(files))
 }
 
 #[tauri::command]
@@ -351,36 +369,31 @@ fn backfill_speech_corpus_capture_quality(
     storage: tauri::State<'_, AppStorage>,
     qualities: std::collections::BTreeMap<String, serde_json::Value>,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    backfill_speech_corpus_capture_quality_impl(
-        &storage.0.document(SPEECH_CORPUS_DOCUMENT)?,
-        &qualities,
-    )
-    .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.backfill_capture_quality(files, &qualities))
 }
 
 #[tauri::command]
 fn speech_corpus_observations(
     storage: tauri::State<'_, AppStorage>,
 ) -> Result<serde_json::Value, String> {
-    speech_corpus_observations_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
-        .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.observations(files))
 }
 
 #[tauri::command]
 fn export_speech_corpus(
     storage: tauri::State<'_, AppStorage>,
 ) -> Result<serde_json::Value, String> {
-    export_speech_corpus_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?)
-        .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.export(files))
 }
 
+/// Writes the session's corpus entry only; the analysis is asked for separately
+/// (`load_speech_corpus`), off the Save path (vox#157).
 #[tauri::command]
 fn save_speech_corpus_session(
     storage: tauri::State<'_, AppStorage>,
     session: CorpusSessionInput,
-) -> Result<SpeechCorpusAnalysis, String> {
-    save_speech_corpus_session_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, session)
-        .map_err(|err| err.to_string())
+) -> Result<(), String> {
+    storage.corpus(|corpus, files| corpus.save(files, session).map(|_| ()))
 }
 
 #[tauri::command]
@@ -388,8 +401,7 @@ fn delete_speech_corpus_session(
     storage: tauri::State<'_, AppStorage>,
     session_id: String,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    delete_speech_corpus_session_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, &session_id)
-        .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.delete(files, &session_id))
 }
 
 #[tauri::command]
@@ -397,8 +409,7 @@ fn replace_speech_corpus_sessions(
     storage: tauri::State<'_, AppStorage>,
     sessions: Vec<CorpusSessionInput>,
 ) -> Result<SpeechCorpusAnalysis, String> {
-    replace_speech_corpus_sessions_impl(&storage.0.document(SPEECH_CORPUS_DOCUMENT)?, sessions)
-        .map_err(|err| err.to_string())
+    storage.corpus(|corpus, files| corpus.replace(files, sessions))
 }
 
 #[tauri::command]
@@ -436,7 +447,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             configure_media_permissions(app);
-            app.manage(AppStorage(open_app_storage(app)));
+            app.manage(AppStorage::new(open_app_storage(app)));
             app.manage(LiveVoiceActivityState::default());
             app.manage(AnalysisStreamState::default());
             Ok(())

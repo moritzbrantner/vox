@@ -73,16 +73,32 @@ export function ownSessions(sessions: SavedSession[]) {
   return sessions.filter((session) => !session.reviewCopy);
 }
 
+let corpusRefreshes = 0;
+
+/**
+ * Writes the session's corpus entry, nothing else (vox#157). Once it is written the analysis is
+ * asked for in the background, off the Save path, and handed to `onAnalysis` unless a later
+ * refresh superseded it.
+ */
 export async function saveSpeechCorpusSession(
   session: SavedSession,
-): Promise<SpeechCorpusAnalysis> {
+  onAnalysis: (analysis: SpeechCorpusAnalysis) => void,
+): Promise<void> {
   if (session.reviewCopy) {
     throw new Error("review copies are not part of the speech corpus");
   }
   if (!isDesktopApp()) {
     throw new Error("desktop corpus is only available in the Tauri app");
   }
-  return invoke<SpeechCorpusAnalysis>("save_speech_corpus_session", { session });
+  await invoke("save_speech_corpus_session", { session });
+  const refresh = ++corpusRefreshes;
+  void invoke<SpeechCorpusAnalysis>("load_speech_corpus").then(
+    (analysis) => {
+      if (refresh === corpusRefreshes) onAnalysis(analysis);
+    },
+    // The figures shown stay until the next refresh; the session itself is saved.
+    () => undefined,
+  );
 }
 
 export async function deleteSpeechCorpusSession(

@@ -7,6 +7,7 @@ import { ON_DEVICE_ANALYZER } from "@stutter-tracker/compute-client";
 import { App } from "./App";
 import * as tauriCore from "@tauri-apps/api/core";
 import * as recorderModule from "./audio/browserRecorder";
+import { storedSessions } from "./test/storedSessions";
 
 const TEST_CAPTURE = recorderModule.describeCapture(undefined);
 
@@ -194,7 +195,7 @@ describe("App integration", () => {
     await userEvent.click(screen.getByRole("button", { name: /Delete saved session from/ }));
 
     await waitFor(() => expect(container.querySelector(".session-row")).toBeNull());
-    expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "null")).toEqual([]);
+    expect(storedSessions()).toEqual([]);
     await waitFor(() =>
       expect(screen.queryByText("Repeated word sequence")).not.toBeInTheDocument(),
     );
@@ -234,7 +235,7 @@ describe("App integration", () => {
 
     // Nothing changed, so nothing is written and no copy is made.
     expect(await screen.findByText("Session is already saved")).toBeInTheDocument();
-    const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as { id: string }[];
+    const stored = (storedSessions() ?? []) as { id: string }[];
     expect(stored.map((session) => session.id)).toEqual(["session-1"]);
   });
 
@@ -342,7 +343,7 @@ describe("App integration", () => {
 
     expect(await screen.findByText(/Delete failed/)).toBeInTheDocument();
     expect(container.querySelectorAll(".session-row")).toHaveLength(1);
-    expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1);
+    expect(storedSessions() ?? []).toHaveLength(1);
   });
 
   it("leaves unknown-quality sessions out of the corpus event totals and says so", async () => {
@@ -415,7 +416,7 @@ describe("App integration", () => {
     await userEvent.click(screen.getByRole("button", { name: /Reanalyze saved session from/ }));
 
     expect(await screen.findByText("Reanalysis added to the session")).toBeInTheDocument();
-    const [stored] = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as {
+    const [stored] = (storedSessions() ?? []) as {
       analysis: { id: string; analyzer: { producer: string } | null };
       priorAnalyses: { id: string }[];
     }[];
@@ -1344,10 +1345,8 @@ describe("capture-quality gate", () => {
 
     // The saved session keeps how it was recorded.
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!);
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    const [saved] = storedSessions()!;
     expect(saved.recordings).toEqual([
       expect.objectContaining({
         sessionId: saved.id,
@@ -1400,10 +1399,8 @@ describe("capture-quality gate", () => {
     expect(recordButton()).toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    const [saved] = JSON.parse(localStorage.getItem(STORE_KEY)!);
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    const [saved] = storedSessions()!;
     expect(saved.recordings).toEqual([
       expect.objectContaining({
         speakerAssessment: "unknown",
@@ -1513,10 +1510,8 @@ describe("browser-local capture measurement", () => {
 
   async function savedCaptureQuality() {
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1),
-    );
-    return JSON.parse(localStorage.getItem(STORE_KEY)!)[0].report.captureQuality;
+    await waitFor(() => expect(storedSessions() ?? []).toHaveLength(1));
+    return storedSessions()![0].report.captureQuality;
   }
 
   it("measures the analyzed audio with the audio-analysis WASM kernel", async () => {
@@ -1704,7 +1699,7 @@ describe("interrupted capture recovery", () => {
 
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(container.querySelectorAll(".session-row")).toHaveLength(1));
-    const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]");
+    const stored = storedSessions() ?? [];
     expect(stored).toHaveLength(1);
     expect(stored[0].id).toBe(checkpoint.id);
     expect(stored[0].startedAt).toBe(checkpoint.startedAt);
@@ -1910,7 +1905,7 @@ describe("interrupted capture recovery", () => {
     await user.click(within(notice).getByRole("button", { name: "Recover recording" }));
 
     await waitFor(() => expect(container.querySelectorAll(".session-row")).toHaveLength(1));
-    const [stored] = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]");
+    const [stored] = storedSessions() ?? [];
     expect(stored.id).toBe(checkpoint.id);
     expect(stored.report.events).toEqual(report.events);
     expect(stored.analysis).toMatchObject({ id: "run-audio", audioId: "audio-gone" });
@@ -2049,7 +2044,7 @@ describe("interrupted capture recovery", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(container.querySelectorAll(".session-row")).toHaveLength(1));
-    const [stored] = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]");
+    const [stored] = storedSessions() ?? [];
     expect(stored.pauses).toEqual(checkpoint.pauses);
   });
 
@@ -2090,7 +2085,7 @@ describe("interrupted capture recovery", () => {
 
     expect(await screen.findByText("This recording was already saved")).toBeInTheDocument();
     expect(container.querySelectorAll(".session-row")).toHaveLength(2);
-    expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(2);
+    expect(storedSessions() ?? []).toHaveLength(2);
     expect(localStorage.getItem(CHECKPOINT_KEY)).toBeNull();
   });
 
@@ -2118,9 +2113,7 @@ describe("interrupted capture recovery", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(container.querySelectorAll(".session-row")).toHaveLength(2));
-    const ids = JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]").map(
-      (session: { id: string }) => session.id,
-    );
+    const ids = (storedSessions() ?? []).map((session: { id: string }) => session.id);
     expect(ids).toEqual([checkpoint.id, "session-from-other-window"]);
   });
 
@@ -2212,7 +2205,7 @@ describe("interrupted capture recovery", () => {
 
     expect(await screen.findByText(/Delete failed/)).toBeInTheDocument();
     expect(container.querySelectorAll(".session-row")).toHaveLength(1);
-    expect(JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]")).toHaveLength(1);
+    expect(storedSessions() ?? []).toHaveLength(1);
   });
 
   it("keeps a full-storage checkpoint failure visible until the capture is saved", async () => {

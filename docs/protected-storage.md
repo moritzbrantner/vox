@@ -23,8 +23,9 @@ Everything the app keeps locally is sealed with that key under
 
 | Data | Where |
 | --- | --- |
-| Saved sessions, unreadable-session quarantine, speaker profiles, settings, consent ledger, auditory-feedback settings, interrupted-capture checkpoints | `protected/web/` (the web view's key/value storage) |
-| Speech corpus, known speakers (Rust side) | `protected/documents/` |
+| Saved sessions (one entry per session plus the id list), unreadable-session quarantine, speaker profiles, settings, consent ledger, auditory-feedback settings, interrupted-capture checkpoints | `protected/web/` (the web view's key/value storage) |
+| Speech corpus (one entry per session, so a save writes only that session; vox#157) | `protected/corpus/` |
+| Known speakers (Rust side); the single-file corpus of earlier builds until it is split into `corpus/` on first load | `protected/documents/` |
 | Kept session audio (opt-in) | `protected/audio/` |
 
 Each file holds a random 24-byte nonce and the ciphertext of the entry's name plus its value; file
@@ -81,7 +82,8 @@ Earlier builds kept the same data unencrypted: the web view's `localStorage` (`s
 keys), IndexedDB (`vox-session-audio`) and `speech-corpus.json` / `known-speakers.json` in the app
 data directory. On the first start with a working credential store they are moved in:
 
-1. Rust-side documents: each plain file is sealed into the store and the plain file is removed
+1. Rust-side documents and the plain corpus entries (`speech-corpus/`, written by a build without
+   a credential store): each plain file is sealed into the store and the plain file is removed
    only after the sealed copy was written. A plain file that is still present is authoritative and
    moved again on the next start, so an interrupted or failed move never loses a write. If moving
    fails, the app keeps using the plain files for that run and shows why.

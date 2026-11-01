@@ -9,8 +9,8 @@ import { App } from "./App";
 import * as recorderModule from "./audio/browserRecorder";
 import { getSessionAudio, resetSessionAudioConnection } from "./storage/sessionAudio";
 import type { SavedSession } from "./types";
+import { storedSessions } from "./test/storedSessions";
 
-const STORE_KEY = "stutter-tracker:sessions";
 const TEST_CAPTURE = recorderModule.describeCapture(undefined);
 
 function renderApp() {
@@ -22,7 +22,7 @@ function renderApp() {
   );
 }
 
-const stored = () => JSON.parse(localStorage.getItem(STORE_KEY) ?? "[]") as SavedSession[];
+const stored = () => (storedSessions() ?? []) as SavedSession[];
 
 type Recognition = { onresult: ((event: unknown) => void) | null };
 
