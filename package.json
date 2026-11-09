@@ -57,7 +57,7 @@
     "test:rust": "turbo run test --filter=@stutter-tracker/desktop"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "1.65.0",
     "@tauri-apps/cli": "2.12.4",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.3",
