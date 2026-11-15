@@ -19,7 +19,7 @@
     "bench:pitch-worklet": "bun scripts/bench-pitch-worklet.ts"
   },
   "dependencies": {
-    "@moritzbrantner/audio-analysis-core-wasm": "github:moritzbrantner/audio-analysis-core-wasm#4d1a6c89d90d629921493bef7cc8e5690372d8c6",
+    "@moritzbrantner/audio-analysis-core-wasm": "github:moritzbrantner/audio-analysis-core-wasm#e8214637aafb9267e144c97905906acbeea8515e",
     "@stutter-tracker/compute-client": "workspace:*",
     "@stutter-tracker/shared": "workspace:*",
     "@tailwindcss/vite": "^4.3.0",
