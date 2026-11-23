@@ -97,13 +97,17 @@ if [[ "$mode" == "setup" ]] && command -v apt-get >/dev/null 2>&1; then
 fi
 
 # Toolchains track the latest stable release (owner decision 2026-10-23): declarations are
-# minimums, so any installed Bun, Node or Rust release satisfies them.
+# minimums, so any installed Bun, Node or Rust release satisfies them. A Bun repository declares
+# no version at all (BUN-001, owner decision 2026-11-23): its committed lockfile selects Bun.
 desired_bun=""
 if [[ -f "$root/package.json" ]]; then
   desired_bun="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"bun@\([^"]*\)".*/\1/p' "$root/package.json" | head -n 1)"
 fi
 if [[ -z "$desired_bun" && -f "$root/.bun-version" ]]; then
   desired_bun="$(tr -d '[:space:]' < "$root/.bun-version")"
+fi
+if [[ -z "$desired_bun" && ( -f "$root/bun.lock" || -f "$root/bun.lockb" ) ]]; then
+  desired_bun="latest stable"
 fi
 if [[ -n "$desired_bun" ]]; then
   if [[ -d "$HOME/.bun/bin" ]]; then
